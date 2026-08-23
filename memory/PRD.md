@@ -22,10 +22,12 @@ Load this git and show preview https://github.com/Marketexpert3/OfficeflowV3.git
 - 2026-08-23: Installed frontend dependencies with Yarn without changing tracked source files.
 - 2026-08-23: Started the unchanged frontend preview on port 3001.
 - 2026-08-23: Verified `/login` renders the OfficeFlow welcome screen, fields, and sign-in control.
+- 2026-08-23: Reassigned the externally mapped frontend port 3000 to this checkout and verified `https://officeflow-v3.preview.emergentagent.com/login` shows the requested OfficeFlow interface.
 
 ## Known limitations
 - The local CRA preview has no development proxy for relative `/api` requests, so public settings requests fall back to the SPA route.
 - Existing backend authentication currently returns HTTP 500 when `JWT_SECRET` is absent from its runtime environment; this was not changed because the request was to run the project exactly as provided.
+- The existing backend returns 404 for optional `/api/settings/public`, so the login screen uses its built-in default branding.
 
 ## Prioritized backlog
 - P0: Add runtime JWT configuration and backend proxy routing only if the user requests a fully interactive local preview.

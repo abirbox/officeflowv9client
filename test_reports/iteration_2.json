@@ -1,0 +1,34 @@
+{
+  "summary": "Frontend-only external preview verification completed. The OfficeFlow login page loads at the requested preview URL, renders the expected welcome/hero content and controls, accepts input, and remains usable on mobile. The preview still returns 404 for the public settings API, so dynamic branding cannot load.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Login page public settings load",
+        "issue": "The browser requests https://officeflow-v3.preview.emergentagent.com/api/settings/public and receives HTTP 404 application/json (observed twice). The login page falls back to default OfficeFlow branding and emits console 404 errors.",
+        "affected_selectors": ["[data-testid=login-welcome-title]", "[data-testid=login-hero-title]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_1.json"],
+  "action_items": [
+    "Fix the external preview ingress/proxy so /api/settings/public reaches the backend instead of returning 404.",
+    "Retest dynamic public branding and login submission after API routing is corrected."
+  ],
+  "critical_code_review_comments": [
+    "Login.js and App.js contain the expected route and stable data-testid hooks; the remaining failure is deployment/preview API routing rather than a missing frontend route."
+  ],
+  "updated_files": ["/app/test_reports/iteration_2.json"],
+  "success_rate": {"backend": "not tested (frontend-only request)", "frontend": "80%"},
+  "seed_data_creation": "None",
+  "test_credentials": "Not used; /app/memory/test_credentials.md contains no credentials.",
+  "retest_needed": true,
+  "should_call_test_agent_after_fix": true,
+  "context_for_next_testing_agent": "External /login rendering, input typing, submit click, desktop layout, and mobile layout passed. Verify /api/settings/public routing first; no source files were changed.",
+  "rca of the issue": "AppSettingsContext calls api.get('/settings/public'), which becomes /api/settings/public in the browser. The external preview host returns a JSON 404 for that path, so the request never reaches the backend and DEFAULTS remain active."
+}
