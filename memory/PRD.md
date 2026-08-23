@@ -50,3 +50,11 @@ Load this git and show preview https://github.com/Marketexpert3/OfficeflowV3.git
 - Made `work_order_number` optional on `ScheduleCreate`, in the create-schedule form ("Work Order Number" no longer marked required), and in the CSV import path.
 - CSV import: added `?dry_run=true` query param — validates every row but persists nothing. Response shape unchanged (`created_ids` empty).
 - CSV import: rows that duplicate an existing shift (same officer + date + start_time) now soft-skip via a `skipped: [{row, reason}]` list rather than fail as errors. Frontend Import CSV dialog gained a "Preview" button and displays separate Ready/Skipped/Errors badges + tables.
+
+## Update 2026-02 Session (cont'd 3)
+- All CSV export buttons switched to Excel (.xlsx):
+  - Added `openpyxl` to backend requirements; new `build_xlsx()` helper in `utils/dispatch_reports.py` renders styled workbooks (indigo header, banded rows, red-bold post pin, currency-aware widths, frozen header).
+  - Backend endpoints `/dispatch/reports/export` and `/dispatch/reports/export/entity-detail` now accept `format=xlsx`.
+  - Frontend `DispatchReportsPage` "Export CSV" → "Export Excel" (and entity-detail column picker CSV → Excel).
+  - Added `exceljs` npm package. `DispatchSchedulePage` now generates a styled .xlsx client-side that mirrors the on-screen table (pink header FBC9FF, tinted Date column, red-bold post pin, green city cells).
+  - `ReportsPage` (attendance/payroll/overtime) `csvDownload` helper replaced with `excelDownload` — indigo header, banded rows.
