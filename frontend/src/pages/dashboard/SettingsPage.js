@@ -37,42 +37,44 @@ const SettingsPage = () => {
       </div>
 
       <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="bg-white dark:bg-[#18181B] border border-[#E2E8F0] dark:border-[#27272A]">
-          <TabsTrigger value="profile" data-testid="tab-profile">
+        <div className="overflow-x-auto -mx-3 md:mx-0 px-3 md:px-0 scrollbar-thin" data-testid="settings-tabs-scroll">
+          <TabsList className="bg-white dark:bg-[#18181B] border border-[#E2E8F0] dark:border-[#27272A] w-max min-w-full flex-nowrap justify-start">
+            <TabsTrigger value="profile" data-testid="tab-profile" className="shrink-0">
             <User className="w-4 h-4 mr-2" />
             Profile
           </TabsTrigger>
-          <TabsTrigger value="security" data-testid="tab-security">
+          <TabsTrigger value="security" data-testid="tab-security" className="shrink-0">
             <Shield className="w-4 h-4 mr-2" />
             Security
           </TabsTrigger>
-          <TabsTrigger value="notifications" data-testid="tab-notifications">
+          <TabsTrigger value="notifications" data-testid="tab-notifications" className="shrink-0">
             <Bell className="w-4 h-4 mr-2" />
             Notifications
           </TabsTrigger>
-          <TabsTrigger value="appearance" data-testid="tab-appearance">
+          <TabsTrigger value="appearance" data-testid="tab-appearance" className="shrink-0">
             <Palette className="w-4 h-4 mr-2" />
             Appearance
           </TabsTrigger>
           {isAdmin && (
-            <TabsTrigger value="branding" data-testid="tab-branding">
+            <TabsTrigger value="branding" data-testid="tab-branding" className="shrink-0">
               <Building2 className="w-4 h-4 mr-2" />
               Branding
             </TabsTrigger>
           )}
           {isAdmin && (
-            <TabsTrigger value="colors" data-testid="tab-colors">
+            <TabsTrigger value="colors" data-testid="tab-colors" className="shrink-0">
               <Droplet className="w-4 h-4 mr-2" />
               Colours
             </TabsTrigger>
           )}
           {isAdmin && (
-            <TabsTrigger value="offices" data-testid="tab-offices">
+            <TabsTrigger value="offices" data-testid="tab-offices" className="shrink-0">
               <MapPin className="w-4 h-4 mr-2" />
               Offices
             </TabsTrigger>
           )}
-        </TabsList>
+          </TabsList>
+        </div>
 
         <TabsContent value="profile">
           <Card className="border-[#E2E8F0] dark:border-[#27272A]">
