@@ -66,3 +66,9 @@ Load this git and show preview https://github.com/Marketexpert3/OfficeflowV3.git
 - Removed Cancel button from row menu; the legacy `/schedules/{sid}/cancel` endpoint now hard-deletes (backwards-compatible).
 - DispatchDashboardPage stat cards: replaced Late/Absent with Clocked In / Clocked Out counts.
 - DispatchReportsPage: removed Absent/Late/Early Out/Cancelled columns from By-Officer / By-Client / By-Vendor / By-Post-Site (they would always be 0 now). Copy updated to "Paid hours = shifts once Clocked In".
+
+## Update 2026-02 Session (cont'd 5)
+- Invoices Preview & Customize: Users can now edit every line item before generating an invoice.
+- Backend `DispatchInvoiceCreate` grew an optional `lines: List[InvoiceLine]` field. When provided (from the Customize screen), `_build_invoice_context` uses those lines verbatim, recomputes each row's `total_amount = hours × rate`, and regenerates the grand total + amount-in-words so the PDF matches exactly what the user saw on screen. If absent, it falls back to auto-aggregation from completed schedules (existing behaviour).
+- Frontend: `Preview` button relabeled to `Preview & Customize`. On preview, the fetched lines are seeded into `form.lines` and rendered as an editable table with inputs for shift_date, location, work_order, actual_hours, rate. Row total updates live. `Add Line` inserts a blank custom line; per-row trash icon removes it. `Reset from schedules` re-fetches. Save & Download and Download PDF both send `form.lines`.
+- Verified E2E: 2 custom lines (10×25=250, 5.5×30=165) preview returned correct row totals, `total_amount=415.00`, `amount_in_words="Four Hundred & Fifteen Dollars."`.
