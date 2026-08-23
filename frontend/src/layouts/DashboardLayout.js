@@ -28,6 +28,7 @@ import {
   Shield,
   ClipboardList,
   ScrollText,
+  User,
 } from 'lucide-react';
 import { hasPermission, hasAnyDispatchPerm } from '@/lib/permissions';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -297,9 +298,9 @@ const DashboardLayout = () => {
             initial={{ x: -300 }}
             animate={{ x: 0 }}
             exit={{ x: -300 }}
-            className="lg:hidden fixed inset-y-0 left-0 w-64 bg-white dark:bg-[#18181B] border-r border-[#E2E8F0] dark:border-[#27272A] z-40 pt-16"
+            className="lg:hidden fixed inset-y-0 left-0 w-64 bg-white dark:bg-[#18181B] border-r border-[#E2E8F0] dark:border-[#27272A] z-40 pt-16 flex flex-col"
           >
-            <nav className="p-3 space-y-1">
+            <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
               {navigation.map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.href);
@@ -312,9 +313,10 @@ const DashboardLayout = () => {
                     }}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
                       active
-                        ? 'bg-[#4F46E5] text-white'
+                        ? 'bg-[var(--brand-primary)] text-[var(--brand-primary-fg)]'
                         : 'text-[#64748B] dark:text-[#A1A1AA] hover:bg-[#F1F5F9] dark:hover:bg-[#27272A]'
                     }`}
+                    data-testid={`mobile-nav-${item.name.toLowerCase().replace(/\W+/g, '-')}`}
                   >
                     <Icon className="w-5 h-5" />
                     <span className="text-sm font-medium">{item.name}</span>
@@ -322,6 +324,45 @@ const DashboardLayout = () => {
                 );
               })}
             </nav>
+
+            {/* User footer — profile shortcut, settings and Logout for
+                mobile / tablet users who can't reach the top-right avatar
+                dropdown that only appears on the desktop sidebar. */}
+            <div className="p-3 border-t border-[#E2E8F0] dark:border-[#27272A] space-y-1" data-testid="mobile-user-footer">
+              <div className="flex items-center gap-3 px-3 py-2">
+                <Avatar className="w-9 h-9">
+                  <AvatarImage src={user?.avatar_path} alt={user?.name || 'User'} />
+                  <AvatarFallback className="bg-[var(--brand-primary)] text-[var(--brand-primary-fg)] text-xs font-semibold">
+                    {(user?.name || 'U').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold truncate">{user?.name || 'User'}</div>
+                  <div className="text-xs text-[#64748B] dark:text-[#A1A1AA] truncate">{user?.email}</div>
+                </div>
+              </div>
+              <button
+                onClick={() => { navigate('/dashboard/profile'); setMobileMenuOpen(false); }}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[#334155] dark:text-[#E4E4E7] hover:bg-[#F1F5F9] dark:hover:bg-[#27272A]"
+                data-testid="mobile-profile-btn"
+              >
+                <User className="w-4 h-4" /> Profile
+              </button>
+              <button
+                onClick={() => { navigate('/dashboard/settings'); setMobileMenuOpen(false); }}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[#334155] dark:text-[#E4E4E7] hover:bg-[#F1F5F9] dark:hover:bg-[#27272A]"
+                data-testid="mobile-settings-btn"
+              >
+                <Settings className="w-4 h-4" /> Settings
+              </button>
+              <button
+                onClick={() => { setMobileMenuOpen(false); handleLogout(); }}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold text-[var(--danger)] hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                data-testid="mobile-logout-btn"
+              >
+                <LogOut className="w-4 h-4" /> Logout
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

@@ -38,3 +38,9 @@ Load this git, No change all make same https://github.com/abirbox/OfficeFlowERP.
 - Fixed shift_status='Complete' filter on GET /api/dispatch/invoices/locations so dropdown never offers a location that would yield an empty invoice
 - Updated all test fixtures to admin@example.com / admin123
 - Backend regression: 18/18 iter4 tests, 8/8 invoice regression tests pass
+
+## 2026-02 Iteration 8 — Mobile Menu Logout ReferenceError Fix
+- Added missing `User` icon import to `/app/frontend/src/layouts/DashboardLayout.js` (used in the mobile profile button).
+- Previously threw `ReferenceError: User is not defined`, causing a blank/error screen when opening the app on mobile.
+- Mobile navigation drawer now renders with Profile, Settings, and Logout footer.
+
