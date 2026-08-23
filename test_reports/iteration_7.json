@@ -1,0 +1,23 @@
+{
+  "summary": "Frontend-only responsive layout verification of Settings > Colours tab at mobile (390x844) and desktop (1440x900). All 6 review acceptance checks passed. CardHeader stacks vertically on mobile with both Reset and Save buttons fully inside viewport (right edges 185px and 318px vs viewport 390px); title sits above the button row (title bottom y=349 < save y=451). Desktop layout preserved: title and buttons share the same row with buttons rendered right of the title. No horizontal document overflow (scrollWidth == clientWidth == 390). First Brand row (color-swatch-brand_primary + color-input-brand_primary) render inline, both visible with input right edge at 209px. Reset-to-defaults functional flow: dialog auto-accepted, brand_primary input reflected #4F46E5, success toast 'Site colours restored to defaults' shown.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ColorsTab uses window.confirm for a destructive reset — consider a shadcn AlertDialog for better UX/mobile consistency, but not blocking.",
+    "Success toast appears duplicated in some renders (two identical 'Site colours restored to defaults' entries in DOM). Likely from double toast trigger on reset; worth verifying save/reset flow doesn't fire twice."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "admin@example.com / admin123 (super_admin)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "ColorsTab responsive fix verified. Mobile bounding boxes: reset btn x=37,w=148 (right=185); save btn x=193,w=125 (right=318); viewport=390. Title y=333 (bottom=349) is above buttons y=451, confirming stacked layout. Desktop title/buttons stay on one row. Reset flow works and restores defaults (#4F46E5 for brand_primary).",
+  "rca of the issue": "Original bug: CardHeader used a horizontal flex row that squeezed the text on the left and pushed the Save button past the 390px viewport. Fix (flex-col md:flex-row + size=sm + flex-wrap on button group) confirmed correct — mobile stacks vertically, desktop unchanged."
+}

@@ -125,20 +125,21 @@ const ColorsTab = () => {
 
   return (
     <Card className="border-[#E2E8F0] dark:border-[#27272A]" data-testid="colors-tab">
-      <CardHeader className="flex flex-row items-start justify-between gap-4">
-        <div>
+      <CardHeader className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+        <div className="min-w-0">
           <CardTitle>Site Colours</CardTitle>
           <p className="text-sm text-[#64748B] dark:text-[#A1A1AA] mt-1 max-w-2xl">
             Everything you change here applies to every user immediately after saving — brand buttons, table headers, and every status / confirmation badge in the app.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap shrink-0">
           <Button variant="outline" size="sm" onClick={onReset} disabled={busy} data-testid="colors-reset-btn">
             <RotateCcw className="w-4 h-4 mr-2" /> Reset to defaults
           </Button>
           <Button
             onClick={onSave}
             disabled={!dirty || busy}
+            size="sm"
             className="bg-[var(--brand-primary)] text-[var(--brand-primary-fg)] hover:bg-[var(--brand-primary-hover)]"
             data-testid="colors-save-btn"
           >
