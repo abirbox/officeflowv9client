@@ -328,15 +328,15 @@ const DashboardLayout = () => {
 
       {/* Main Content */}
       <main
-        className="transition-all duration-300"
+        className="transition-all duration-300 lg:ml-[--sidebar-width]"
         style={{
-          marginLeft: sidebarOpen ? '256px' : '64px',
+          '--sidebar-width': sidebarOpen ? '256px' : '64px',
         }}
       >
-        <div className="lg:ml-0 ml-0 pt-16 lg:pt-0">
+        <div className="pt-16 lg:pt-0 min-w-0">
           {/* Top Bar */}
-          <div className="h-16 bg-white/70 dark:bg-[#18181B]/70 backdrop-blur-xl border-b border-[#E2E8F0] dark:border-[#27272A] px-6 flex items-center justify-between">
-            <div className="flex-1 max-w-2xl">
+          <div className="h-16 bg-white/70 dark:bg-[#18181B]/70 backdrop-blur-xl border-b border-[#E2E8F0] dark:border-[#27272A] px-3 md:px-6 flex items-center justify-between gap-3">
+            <div className="flex-1 min-w-0 max-w-2xl">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B] dark:text-[#A1A1AA]" />
                 <Input
@@ -347,7 +347,7 @@ const DashboardLayout = () => {
               </div>
             </div>
 
-            <div className="hidden lg:flex items-center gap-3">
+            <div className="flex items-center gap-1 md:gap-3 shrink-0">
               <Button
                 variant="ghost"
                 size="icon"
@@ -364,7 +364,7 @@ const DashboardLayout = () => {
           </div>
 
           {/* Page Content */}
-          <div className="p-6">
+          <div className="p-3 md:p-6">
             <Outlet />
           </div>
         </div>
