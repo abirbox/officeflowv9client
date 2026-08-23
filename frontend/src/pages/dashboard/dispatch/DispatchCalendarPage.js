@@ -124,7 +124,7 @@ const MonthGrid = ({ cursor, byDate, onSelect }) => {
                   <button key={e.id} onClick={() => onSelect(e)}
                     className={`w-full text-left px-1.5 py-1 rounded text-[11px] truncate ${CONFIRM_BADGE[e.confirmation_status] || 'bg-slate-100 text-slate-700'} hover:opacity-80`}
                     data-testid={`cal-event-${e.id}`}>
-                    <span className="font-medium">{e.start_time}</span> {e.officer_name || '—'}
+                    <span className="font-medium">{e.start_time}</span> {e.post_site_name || '—'}
                   </button>
                 ))}
                 {events.length > 3 && <div className="text-[11px] text-[#64748B]">+{events.length - 3} more</div>}
@@ -160,8 +160,7 @@ const WeekGrid = ({ cursor, byDate, onSelect }) => {
                       className={`w-full text-left p-2 rounded-lg ${CONFIRM_BADGE[e.confirmation_status] || 'bg-slate-100 text-slate-700'} hover:opacity-80`}
                       data-testid={`cal-event-${e.id}`}>
                       <div className="text-[11px] font-mono">{e.start_time}–{e.end_time}</div>
-                      <div className="text-xs font-medium mt-0.5">{e.officer_name}</div>
-                      <div className="text-[11px] opacity-80">{e.post_site_name}</div>
+                      <div className="text-xs font-medium mt-0.5">{e.post_site_name || '—'}</div>
                       {formatPin(e) && <div className="text-[10px] font-mono opacity-70">{formatPin(e)}</div>}
                     </button>
                   ))}
@@ -181,8 +180,8 @@ const DayList = ({ date, events, onSelect }) => (
         <button key={e.id} onClick={() => onSelect(e)} className="w-full text-left p-4 hover:bg-[#F8FAFC] dark:hover:bg-[#0F0F11] transition" data-testid={`cal-event-${e.id}`}>
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm font-semibold text-[#0F172A] dark:text-[#FAFAFA]">{e.officer_name} · {e.post_site_name}</div>
-              <div className="text-xs text-[#64748B] mt-1">{e.client_name} · {e.vendor_name} · Post Pin: {formatPin(e) || '—'}</div>
+              <div className="text-sm font-semibold text-[#0F172A] dark:text-[#FAFAFA]">{e.post_site_name || '—'}</div>
+              <div className="text-xs text-[#64748B] mt-1">{e.officer_name} · {e.client_name} · {e.vendor_name} · Post Pin: {formatPin(e) || '—'}</div>
             </div>
             <div className="text-right">
               <div className="font-mono text-sm">{e.start_time}–{e.end_time}</div>
