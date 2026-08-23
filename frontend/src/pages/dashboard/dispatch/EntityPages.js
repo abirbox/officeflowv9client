@@ -73,7 +73,7 @@ export const PostSitesPage = () => (
     fields={[
       { key: 'post_pin', label: 'Post Site Pin', required: true },
       { key: 'name', label: 'Post Site Name', required: true },
-      { key: 'location', label: 'Location' },
+      { key: 'location', label: 'Address' },
       { key: 'city', label: 'City' },
       { key: 'notes', label: 'Note', type: 'textarea' },
     ]}
