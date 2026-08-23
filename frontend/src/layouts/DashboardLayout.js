@@ -87,6 +87,7 @@ const DashboardLayout = () => {
   const { theme, toggleTheme } = useTheme();
   const { settings } = useAppSettings();
   const brandName = settings?.brand_name || 'OfficeFlow';
+  const brandLogo = settings?.brand_logo_url || null;
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -134,24 +135,39 @@ const DashboardLayout = () => {
           <div className="h-16 flex items-center justify-between px-4 border-b border-[#E2E8F0] dark:border-[#27272A]">
             <AnimatePresence mode="wait">
               {sidebarOpen ? (
-                <motion.h1
+                <motion.div
                   key="logo-full"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className="text-xl font-bold text-[#0F172A] dark:text-[#FAFAFA] tracking-tight"
+                  className="flex items-center gap-2 min-w-0"
                   data-testid="app-logo"
                 >
-                  {brandName}
-                </motion.h1>
+                  {brandLogo ? (
+                    <img
+                      src={brandLogo}
+                      alt={brandName}
+                      className="h-9 max-w-[170px] object-contain"
+                      data-testid="app-logo-img"
+                    />
+                  ) : (
+                    <h1 className="text-xl font-bold text-[#0F172A] dark:text-[#FAFAFA] tracking-tight truncate">
+                      {brandName}
+                    </h1>
+                  )}
+                </motion.div>
               ) : (
                 <motion.div
                   key="logo-icon"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className="w-8 h-8 bg-[#4F46E5] rounded-lg"
-                />
+                  className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center bg-[#4F46E5]"
+                >
+                  {brandLogo ? (
+                    <img src={brandLogo} alt={brandName} className="w-full h-full object-contain" />
+                  ) : null}
+                </motion.div>
               )}
             </AnimatePresence>
             <Button
@@ -280,7 +296,16 @@ const DashboardLayout = () => {
 
       {/* Mobile Header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-[#18181B] border-b border-[#E2E8F0] dark:border-[#27272A] z-30 flex items-center justify-between px-4">
-        <h1 className="text-xl font-bold text-[#0F172A] dark:text-[#FAFAFA]">{brandName}</h1>
+        {brandLogo ? (
+          <img
+            src={brandLogo}
+            alt={brandName}
+            className="h-9 max-w-[160px] object-contain"
+            data-testid="mobile-app-logo-img"
+          />
+        ) : (
+          <h1 className="text-xl font-bold text-[#0F172A] dark:text-[#FAFAFA]">{brandName}</h1>
+        )}
         <Button
           variant="ghost"
           size="icon"
