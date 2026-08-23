@@ -1,0 +1,23 @@
+{
+  "summary": "Backend regression testing for the invoice pin_display removal + Location=Post Site Name fix. All 5 pytest cases passed against the live preview URL. Verified: (1) POST /api/dispatch/invoices/preview lines have location == post_site_name and pin_display is null. (2) POST /api/dispatch/invoices/preview/pdf returns a valid PDF whose extracted text contains all expected headers (Shift Date, Location, Work Order, Actual Hour, Rate, Total Amount) and contains NO '#<pin>', '# <pin>' or 'CODE # PIN' pattern (parsed via pdfplumber). (3) When override lines are sent with post_pin AND pin_display 'PTS # 123', the backend strips pin_display to null in the response. (4) GET /api/dispatch/schedules?limit=3 still returns post_pin_display (e.g. 'PTS # 123') - reports/schedules unaffected. (5) GET /api/dispatch/reports/by-officer regression 200 OK.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter6_invoice_pin_removal.py",
+    "/app/test_reports/pytest/iter6_invoice_pin_removal.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "dispatch_invoices.py::_gather_lines still computes and stores the local `code`/`pin` variables even though pin_display is hard-coded to None — dead code that can be removed for clarity.",
+    "InvoiceLine model still exposes pin_display as an optional field; consider removing it from the model or documenting that it will always be forced to None server-side so API consumers don't rely on it.",
+    "dispatch_reports.py::build_invoice_pdf still contains the `# ` pin rendering logic branches conceptually removed by the fix — file was inspected and now only renders plain location text, which is correct."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter6_invoice_pin_removal.py"],
+  "success_rate": {"backend": "100%", "frontend": "not tested (backend only per request)"},
+  "test_credentials": "admin@example.com / admin123 (super_admin) — worked",
+  "seed_data_creation": "None. Used existing seed: Arseas Security client, Protos Security (PTS) vendor, Komlapur post_site (pin 123), Clocked In shift on 2026-08-23.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Invoice pin_display removal + location=post_site_name fix verified end-to-end via API + PDF binary parsing (pdfplumber). Schedules endpoint still returns post_pin_display which is the intended behavior. If invoice UI is changed, add a Playwright test to confirm the customise/preview screen no longer renders VENDOR # PIN under location.",
+  "rca of the issue": "Not applicable — this iteration validated an already-applied fix. Prior bug: invoice line location was populated from post_site.location field and a bold VENDOR # PIN line was rendered above location in the PDF. Fix: (a) _gather_lines uses p.get('name') first; (b) pin_display forced to None in both auto and override_lines paths; (c) build_invoice_pdf Location column renders plain text. Tests confirm no 'CODE # PIN' pattern appears in the rendered PDF text and every response line satisfies location == post_site_name."
+}

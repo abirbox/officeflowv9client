@@ -686,23 +686,13 @@ def build_invoice_pdf(
 
     # ---- Line-item table --------------------------------------------------
     header_row = ["Shift Date", "Location", "Work Order", "Actual Hour", "Rate", "Total Amount"]
-    loc_style = ParagraphStyle(
-        'loc_cell', parent=styles['Normal'], fontSize=9, textColor=dark,
-        leading=11, alignment=1,
-    )
     body_rows = []
     for ln in lines:
         rate = ln.get("rate")
         total = ln.get("total_amount")
-        pin_display = ln.get("pin_display")
-        loc = ln.get("location") or "—"
-        location_cell = Paragraph(
-            f"<b>{pin_display}</b><br/>{loc}" if pin_display else loc,
-            loc_style,
-        )
         body_rows.append([
             ln.get("shift_date") or "—",
-            location_cell,
+            ln.get("location") or "—",
             ln.get("work_order") or "—",
             f"{float(ln.get('actual_hours') or 0):.2f}",
             (f"$ {float(rate):,.2f}" if rate is not None else "—"),

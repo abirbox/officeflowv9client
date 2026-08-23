@@ -78,11 +78,11 @@ async def _gather_lines(db, client_id: str, vendor_id: str, date_from: str, date
         actual = float(s.get("actual_duty_hours") or s.get("duty_hours") or 0)
         rate = float(s.get("billing_rate") or 0)
         line_total = round(actual * rate, 2)
-        location = p.get("location") or p.get("city") or p.get("post_pin") or p.get("name") or "—"
+        location = p.get("name") or p.get("location") or p.get("city") or "—"
         pin = p.get("post_pin")
+        # Post pin is not shown on the invoice itself anymore — keep the raw
+        # value on the line for reference / audit but don't build pin_display.
         pin_display = None
-        if pin:
-            pin_display = f"{code} # {pin}" if code else f"# {pin}"
         lines.append({
             "schedule_id": str(s["_id"]),
             "shift_date": s.get("date"),
@@ -173,11 +173,9 @@ async def _build_invoice_context(db, payload_client_id, payload_vendor_id,
             ln["actual_hours"] = round(hrs, 2)
             ln["rate"] = rate
             ln["total_amount"] = row_total
-            # Backfill the pin_display field for lines that came from the UI
-            # (they only round-trip post_pin) so the invoice PDF renders it.
-            pin = ln.get("post_pin")
-            if pin and not ln.get("pin_display"):
-                ln["pin_display"] = f"{code} # {pin}" if code else f"# {pin}"
+            # Post pin is intentionally not shown on invoices — drop any
+            # pin_display that might have been round-tripped from the UI.
+            ln["pin_display"] = None
             lines.append(ln)
             total_hours += hrs
             if row_total is not None:
