@@ -7,12 +7,13 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bell, Lock, User, Palette, Shield, Building2, MapPin } from 'lucide-react';
+import { Bell, Lock, User, Palette, Shield, Building2, MapPin, Droplet } from 'lucide-react';
 import useAuthStore from '@/stores/authStore';
 import { useTheme } from '@/contexts/ThemeContext';
 import { toast } from '@/components/ui/sonner';
 import BrandingTab from '@/components/settings/BrandingTab';
 import OfficeLocationsTab from '@/components/settings/OfficeLocationsTab';
+import ColorsTab from '@/components/settings/ColorsTab';
 
 const SettingsPage = () => {
   const { user } = useAuthStore();
@@ -57,6 +58,12 @@ const SettingsPage = () => {
             <TabsTrigger value="branding" data-testid="tab-branding">
               <Building2 className="w-4 h-4 mr-2" />
               Branding
+            </TabsTrigger>
+          )}
+          {isAdmin && (
+            <TabsTrigger value="colors" data-testid="tab-colors">
+              <Droplet className="w-4 h-4 mr-2" />
+              Colours
             </TabsTrigger>
           )}
           {isAdmin && (
@@ -205,6 +212,12 @@ const SettingsPage = () => {
         {isAdmin && (
           <TabsContent value="branding">
             <BrandingTab />
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="colors">
+            <ColorsTab />
           </TabsContent>
         )}
 

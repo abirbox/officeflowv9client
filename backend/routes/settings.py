@@ -124,3 +124,85 @@ async def list_currencies():
 @router.get("/timezones")
 async def list_timezones():
     return TIMEZONE_DIRECTORY
+
+
+# ---------------------------------------------------------------------------
+# Site-wide colour palette (theme)
+# ---------------------------------------------------------------------------
+# Only super_admin / admin can update. GET is public so the login page can
+# render with the brand button colour even before sign-in.
+DEFAULT_THEME = {
+    # Brand
+    "brand_primary":         "#4F46E5",
+    "brand_primary_hover":   "#4338CA",
+    "brand_primary_fg":      "#FFFFFF",
+    # Table & tools
+    "table_header_bg":       "#FBC9FF",
+    "table_header_fg":       "#000000",
+    "danger":                "#DC2626",
+    "success":               "#059669",
+    # Shift status
+    "status_not_started_bg": "#334155",
+    "status_not_started_fg": "#F8FAFC",
+    "status_clocked_in_bg":  "#047857",
+    "status_clocked_in_fg":  "#ECFDF5",
+    "status_clocked_out_bg": "#0369A1",
+    "status_clocked_out_fg": "#F0F9FF",
+    # Confirmation
+    "conf_confirmed_bg":     "#047857",
+    "conf_confirmed_fg":     "#ECFDF5",
+    "conf_pending_bg":       "#B45309",
+    "conf_pending_fg":       "#FFFBEB",
+    "conf_no_response_bg":   "#6D28D9",
+    "conf_no_response_fg":   "#F5F3FF",
+    "conf_declined_bg":      "#BE123C",
+    "conf_declined_fg":      "#FFF1F2",
+    "conf_not_confirmed_bg": "#334155",
+    "conf_not_confirmed_fg": "#F8FAFC",
+}
+
+
+@router.get("/theme")
+async def get_theme(request: Request, db=Depends(get_db)):
+    """Return the current colour palette merged with defaults. Public: even
+    the login screen fetches this to render the brand button colour."""
+    doc = await db.app_settings.find_one({"key": "site_theme"})
+    stored = (doc or {}).get("values", {}) or {}
+    values = {**DEFAULT_THEME, **{k: v for k, v in stored.items() if isinstance(v, str) and v}}
+    return {"values": values, "defaults": DEFAULT_THEME}
+
+
+@router.put("/theme")
+async def update_theme(payload: dict, request: Request, db=Depends(get_db)):
+    user = await require_admin(request, db)
+    incoming = payload.get("values") if isinstance(payload, dict) else None
+    if not isinstance(incoming, dict) or not incoming:
+        raise HTTPException(status_code=400, detail="Body must be { values: { token: '#rrggbb', ... } }")
+    accepted = {k: v.strip() for k, v in incoming.items()
+                if k in DEFAULT_THEME and isinstance(v, str) and v.strip()}
+    import re
+    hex_re = re.compile(r"^#[0-9A-Fa-f]{6}$")
+    bad = [k for k, v in accepted.items() if not hex_re.match(v)]
+    if bad:
+        raise HTTPException(status_code=400, detail=f"Invalid colour value(s) for: {', '.join(bad)}")
+    if not accepted:
+        raise HTTPException(status_code=400, detail="No valid colour tokens supplied")
+    await db.app_settings.update_one(
+        {"key": "site_theme"},
+        {"$set": {
+            "key": "site_theme",
+            "values": accepted,
+            "updated_at": datetime.now(timezone.utc),
+            "updated_by_id": str(user["_id"]),
+            "updated_by_name": user.get("name"),
+        }},
+        upsert=True,
+    )
+    return {"values": {**DEFAULT_THEME, **accepted}, "defaults": DEFAULT_THEME}
+
+
+@router.post("/theme/reset")
+async def reset_theme(request: Request, db=Depends(get_db)):
+    await require_admin(request, db)
+    await db.app_settings.delete_one({"key": "site_theme"})
+    return {"values": DEFAULT_THEME, "defaults": DEFAULT_THEME}

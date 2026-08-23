@@ -20,9 +20,9 @@ const CONF_METHODS = ['Call', 'Text', 'Call + Text'];
 const SHIFT_STATUSES = ['Not Started', 'Clocked In', 'Clocked Out'];
 const QUICK_ACTIONS = ['Clocked In', 'Clocked Out'];
 const STATUS_BADGE_MAP = {
-  'Not Started':       'bg-slate-700 text-slate-50 border-slate-800 dark:bg-slate-600 dark:text-slate-50 dark:border-slate-500',
-  'Clocked In':        'bg-emerald-700 text-emerald-50 border-emerald-800 dark:bg-emerald-600 dark:text-emerald-50 dark:border-emerald-500',
-  'Clocked Out':       'bg-sky-700 text-sky-50 border-sky-800 dark:bg-sky-600 dark:text-sky-50 dark:border-sky-500',
+  'Not Started': 'bg-[var(--status-not-started-bg)] text-[var(--status-not-started-fg)] border-[var(--status-not-started-bg)]',
+  'Clocked In':  'bg-[var(--status-clocked-in-bg)] text-[var(--status-clocked-in-fg)] border-[var(--status-clocked-in-bg)]',
+  'Clocked Out': 'bg-[var(--status-clocked-out-bg)] text-[var(--status-clocked-out-fg)] border-[var(--status-clocked-out-bg)]',
 };
 
 // Row background tint by shift type — subtle so status badges stay readable.
@@ -367,8 +367,8 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
   // keeps them visible while horizontal-scrolling wide tables. The row
   // background follows the shift tint, so sticky cells must match that
   // tint at render time (see cell rendering below).
-  const stickyFirstTh = 'sticky left-0 z-20 bg-[#fbc9ff]';
-  const stickyLastTh = 'sticky right-0 z-20 bg-[#fbc9ff]';
+  const stickyFirstTh = 'sticky left-0 z-20 bg-[var(--table-header-bg)]';
+  const stickyLastTh = 'sticky right-0 z-20 bg-[var(--table-header-bg)]';
   // Excel-like grid: right + bottom border on each cell; container's outer
   // border closes the left and top edges.
   const cellBorder = 'border-r border-b border-[#E2E8F0] dark:border-[#27272A]';
@@ -377,7 +377,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
   // of the row's shift tint (Date is the anchor column, Security Officer is
   // called out separately). Returns null when no override applies.
   const columnCellBg = (key) => {
-    if (key === 'date') return 'bg-[#fbc9ff]';
+    if (key === 'date') return 'bg-[var(--table-header-bg)]';
     if (key === 'officer') return 'bg-[rgb(232,250,255)] dark:bg-[rgb(232,250,255)]';
     return null;
   };
@@ -605,7 +605,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
           >
             <Filter className="w-4 h-4 mr-2" /> Filters
             {activeChips.length > 0 && (
-              <span className="ml-2 px-2 py-0.5 rounded-full bg-[#4F46E5] text-white text-xs font-medium leading-none">
+              <span className="ml-2 px-2 py-0.5 rounded-full bg-[var(--brand-primary)] text-white text-xs font-medium leading-none">
                 {activeChips.length}
               </span>
             )}
@@ -641,7 +641,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
             </Button>
           )}
           {canCreate && (
-            <Button onClick={openCreate} className="bg-[#4F46E5] hover:bg-[#4338CA]" data-testid="new-schedule-btn">
+            <Button onClick={openCreate} className="bg-[var(--brand-primary)] text-[var(--brand-primary-fg)] hover:bg-[var(--brand-primary-hover)]" data-testid="new-schedule-btn">
               <Plus className="w-4 h-4 mr-2" /> New Schedule
             </Button>
           )}
@@ -695,7 +695,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
             {visibleCols.map((c) => <col key={c.key} style={{ width: `${getColWidth(c.key)}px` }} />)}
             <col style={{ width: `${MANAGE_COLUMN_WIDTH}px` }} />
           </colgroup>
-          <thead className="bg-[#fbc9ff] text-left text-xs uppercase tracking-wider text-black font-bold">
+          <thead className="bg-[var(--table-header-bg)] text-left text-xs uppercase tracking-wider text-[var(--table-header-fg)] font-bold">
             <tr>
               {/* Header row wraps (`whitespace-normal` on each <th>) so narrow columns don't force horizontal scroll. */}
               {visibleCols.map((c, i) => (
@@ -711,7 +711,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
                   <div
                     onMouseDown={(e) => startResize(c.key, e)}
                     onClick={(e) => e.stopPropagation()}
-                    className="absolute top-1 bottom-1 right-0 w-1 cursor-col-resize bg-[#0F172A]/20 hover:bg-[#4F46E5] hover:w-1.5 transition-all"
+                    className="absolute top-1 bottom-1 right-0 w-1 cursor-col-resize bg-[#0F172A]/20 hover:bg-[var(--brand-primary)] hover:w-1.5 transition-all"
                     title="Drag to resize"
                     data-testid={`col-resize-${c.key}`}
                     role="separator"
@@ -983,7 +983,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={submit} className="bg-[#4F46E5] hover:bg-[#4338CA]" data-testid="save-schedule">Save</Button>
+            <Button onClick={submit} className="bg-[var(--brand-primary)] text-[var(--brand-primary-fg)] hover:bg-[var(--brand-primary-hover)]" data-testid="save-schedule">Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1004,7 +1004,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSiteDialogOpen(false)}>Cancel</Button>
-            <Button onClick={createInlinePostSite} className="bg-[#4F46E5] hover:bg-[#4338CA]" data-testid="ps-save">Create Post Site</Button>
+            <Button onClick={createInlinePostSite} className="bg-[var(--brand-primary)] text-[var(--brand-primary-fg)] hover:bg-[var(--brand-primary-hover)]" data-testid="ps-save">Create Post Site</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1148,7 +1148,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
             <Button
               onClick={() => runImport({ dryRun: false })}
               disabled={!importFile || importBusy}
-              className="bg-[#4F46E5] hover:bg-[#4338CA]"
+              className="bg-[var(--brand-primary)] text-[var(--brand-primary-fg)] hover:bg-[var(--brand-primary-hover)]"
               data-testid="import-csv-submit"
             >
               {importBusy ? 'Importing…' : 'Import CSV'}
@@ -1183,7 +1183,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfDialog(null)}>Cancel</Button>
-            <Button onClick={submitConfirm} className="bg-[#4F46E5] hover:bg-[#4338CA]" data-testid="save-confirmation">Save</Button>
+            <Button onClick={submitConfirm} className="bg-[var(--brand-primary)] text-[var(--brand-primary-fg)] hover:bg-[var(--brand-primary-hover)]" data-testid="save-confirmation">Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1215,7 +1215,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
             <Button variant="outline" onClick={() => setStatusDialog(null)}>Cancel</Button>
             <Button
               onClick={applyStatus}
-              className="bg-[#4F46E5] hover:bg-[#4338CA]"
+              className="bg-[var(--brand-primary)] text-[var(--brand-primary-fg)] hover:bg-[var(--brand-primary-hover)]"
               disabled={!!statusBusy}
               data-testid="save-status-remark"
             >
@@ -1402,7 +1402,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
             </Button>
             <Button
               onClick={() => setFiltersOpen(false)}
-              className="bg-[#4F46E5] hover:bg-[#4338CA]"
+              className="bg-[var(--brand-primary)] text-[var(--brand-primary-fg)] hover:bg-[var(--brand-primary-hover)]"
               data-testid="filters-done-btn"
             >
               Done
@@ -1429,14 +1429,14 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
               <button
                 type="button"
                 onClick={() => setDensity('compact')}
-                className={`px-3 py-1.5 text-xs font-medium ${isCompact ? 'bg-[#4F46E5] text-white' : 'bg-white dark:bg-[#18181B] text-[#0F172A] dark:text-[#FAFAFA] hover:bg-slate-50 dark:hover:bg-[#27272A]'}`}
+                className={`px-3 py-1.5 text-xs font-medium ${isCompact ? 'bg-[var(--brand-primary)] text-white' : 'bg-white dark:bg-[#18181B] text-[#0F172A] dark:text-[#FAFAFA] hover:bg-slate-50 dark:hover:bg-[#27272A]'}`}
                 data-testid="density-compact-btn"
                 aria-pressed={isCompact}
               >Compact</button>
               <button
                 type="button"
                 onClick={() => setDensity('comfortable')}
-                className={`px-3 py-1.5 text-xs font-medium ${!isCompact ? 'bg-[#4F46E5] text-white' : 'bg-white dark:bg-[#18181B] text-[#0F172A] dark:text-[#FAFAFA] hover:bg-slate-50 dark:hover:bg-[#27272A]'}`}
+                className={`px-3 py-1.5 text-xs font-medium ${!isCompact ? 'bg-[var(--brand-primary)] text-white' : 'bg-white dark:bg-[#18181B] text-[#0F172A] dark:text-[#FAFAFA] hover:bg-slate-50 dark:hover:bg-[#27272A]'}`}
                 data-testid="density-comfortable-btn"
                 aria-pressed={!isCompact}
               >Comfortable</button>
@@ -1475,7 +1475,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
           </ul>
           <DialogFooter className="gap-2 sm:gap-2">
             <Button variant="outline" onClick={resetColumns} data-testid="column-reset-btn">Reset default</Button>
-            <Button onClick={() => setChooserOpen(false)} className="bg-[#4F46E5] hover:bg-[#4338CA]" data-testid="column-done-btn">Done</Button>
+            <Button onClick={() => setChooserOpen(false)} className="bg-[var(--brand-primary)] text-[var(--brand-primary-fg)] hover:bg-[var(--brand-primary-hover)]" data-testid="column-done-btn">Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

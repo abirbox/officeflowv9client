@@ -32,6 +32,33 @@
     --input: 226 232 240;
     --ring: 79 70 229;
     --radius: 0.75rem;
+
+    /* Admin-editable site theme tokens. Defaults mirror routes/settings.py
+       DEFAULT_THEME. Once the SiteThemeProvider fetches /api/settings/theme
+       these are overwritten via inline styles on <html>. */
+    --brand-primary: #4F46E5;
+    --brand-primary-hover: #4338CA;
+    --brand-primary-fg: #FFFFFF;
+    --table-header-bg: #FBC9FF;
+    --table-header-fg: #000000;
+    --danger: #DC2626;
+    --success: #059669;
+    --status-not-started-bg: #334155;
+    --status-not-started-fg: #F8FAFC;
+    --status-clocked-in-bg: #047857;
+    --status-clocked-in-fg: #ECFDF5;
+    --status-clocked-out-bg: #0369A1;
+    --status-clocked-out-fg: #F0F9FF;
+    --conf-confirmed-bg: #047857;
+    --conf-confirmed-fg: #ECFDF5;
+    --conf-pending-bg: #B45309;
+    --conf-pending-fg: #FFFBEB;
+    --conf-no-response-bg: #6D28D9;
+    --conf-no-response-fg: #F5F3FF;
+    --conf-declined-bg: #BE123C;
+    --conf-declined-fg: #FFF1F2;
+    --conf-not-confirmed-bg: #334155;
+    --conf-not-confirmed-fg: #F8FAFC;
   }
 
   .dark {

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AppSettingsProvider } from "@/contexts/AppSettingsContext";
+import { SiteThemeProvider } from "@/contexts/SiteThemeContext";
 import { PresenceProvider } from "@/contexts/PresenceContext";
 import { Toaster } from "@/components/ui/sonner";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -37,6 +38,7 @@ function App() {
   return (
     <ThemeProvider>
       <AppSettingsProvider>
+        <SiteThemeProvider>
         <BrowserRouter>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -85,6 +87,7 @@ function App() {
         </Routes>
         <Toaster />
         </BrowserRouter>
+        </SiteThemeProvider>
       </AppSettingsProvider>
     </ThemeProvider>
   );
