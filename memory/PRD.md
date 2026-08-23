@@ -45,3 +45,8 @@ Load this git and show preview https://github.com/Marketexpert3/OfficeflowV3.git
 ## Update 2026-02 Session (cont'd)
 - Vendor Code Everywhere: Added `post_pin_display` to /dispatch/schedules, /dispatch/reports/schedules, /dispatch/reports/by-post-site, /dispatch/reports/entity-detail. Frontend has shared `formatPin(row)` helper used by DispatchSchedulePage, DispatchCalendarPage (WeekGrid/DayList/DetailDialog) and DispatchReportsPage. Report CSV/PDF exports and payslip PDF switched to `post_pin_display`. Invoice PDF's Location cell now renders `VENDOR # PIN` (bold, first line) then the location text underneath.
 - Bulk CSV Import: New endpoints `GET /api/dispatch/schedules/import-template` and `POST /api/dispatch/schedules/import` (multipart CSV). Frontend has an "Import CSV" button on the Dispatch Schedule toolbar and a dialog with column instructions, template download, file picker, and a per-row error report. CSV falls back to `client_name`/`vendor_name` (or codes) when the post site lacks these.
+
+## Update 2026-02 Session (cont'd 2)
+- Made `work_order_number` optional on `ScheduleCreate`, in the create-schedule form ("Work Order Number" no longer marked required), and in the CSV import path.
+- CSV import: added `?dry_run=true` query param — validates every row but persists nothing. Response shape unchanged (`created_ids` empty).
+- CSV import: rows that duplicate an existing shift (same officer + date + start_time) now soft-skip via a `skipped: [{row, reason}]` list rather than fail as errors. Frontend Import CSV dialog gained a "Preview" button and displays separate Ready/Skipped/Errors badges + tables.
