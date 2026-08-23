@@ -134,7 +134,7 @@ const DashboardLayout = () => {
           {/* Logo */}
           <div className="h-16 flex items-center justify-between px-4 border-b border-[#E2E8F0] dark:border-[#27272A]">
             <AnimatePresence mode="wait">
-              {sidebarOpen ? (
+              {sidebarOpen && (
                 <motion.div
                   key="logo-full"
                   initial={{ opacity: 0 }}
@@ -155,18 +155,6 @@ const DashboardLayout = () => {
                       {brandName}
                     </h1>
                   )}
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="logo-icon"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center bg-[#4F46E5]"
-                >
-                  {brandLogo ? (
-                    <img src={brandLogo} alt={brandName} className="w-full h-full object-contain" />
-                  ) : null}
                 </motion.div>
               )}
             </AnimatePresence>
