@@ -1814,6 +1814,112 @@ async def export_entity_detail(
         headers={"Content-Disposition": f'attachment; filename="{fname_base}.pdf"'})
 
 
+# ---------- Payslip customization: advance ledger + custom-payslip export ----
+from pydantic import BaseModel, Field
+from typing import List, Optional
+
+
+class PayslipExtra(BaseModel):
+    label: str
+    amount: float = 0.0
+
+
+class PayslipCustomizePayload(BaseModel):
+    entity_id: str  # officer id
+    date_from: str
+    date_to: str
+    client_id: Optional[str] = None
+    advance_amount: float = 0.0
+    extras: List[PayslipExtra] = Field(default_factory=list)
+    commit_carryforward: bool = True
+
+
+def _advance_key(officer_id: str, client_id: Optional[str]) -> dict:
+    """Ledger key: per officer, and per client when a client filter is used."""
+    return {"officer_id": officer_id, "client_id": client_id or None}
+
+
+@router.get("/reports/advance-balance")
+async def get_advance_balance(
+    request: Request, db=Depends(get_db),
+    officer_id: str = None, client_id: str = None,
+):
+    """Outstanding unused-advance carried from the last payslip for this
+    officer (and optionally this client). Returns 0 when none."""
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.reports.view")
+    if not officer_id:
+        raise HTTPException(400, "officer_id is required")
+    doc = await db.dispatch_advance_ledger.find_one(_advance_key(officer_id, client_id))
+    return {
+        "officer_id": officer_id,
+        "client_id": client_id or None,
+        "balance": float((doc or {}).get("balance") or 0),
+        "updated_at": (doc or {}).get("updated_at"),
+    }
+
+
+@router.post("/reports/export/entity-detail/payslip")
+async def export_officer_payslip_custom(
+    payload: PayslipCustomizePayload,
+    request: Request, db=Depends(get_db),
+):
+    """Render the officer payslip PDF with user-supplied extras + advance
+    deduction, and (optionally) persist any unused advance so it carries
+    forward to the next pay period."""
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.reports.export")
+
+    data = await report_entity_detail(
+        request, db,
+        entity_type="officer", entity_id=payload.entity_id,
+        date_from=payload.date_from, date_to=payload.date_to,
+        client_id=payload.client_id,
+    )
+    fin = has_permission(user, "dispatch.financial.view")
+    if not fin:
+        raise HTTPException(403, "Financial permission required for payslip export")
+
+    subtotal = float((data.get("summary") or {}).get("total_amount") or 0)
+    extras_list = [e.model_dump() for e in payload.extras]
+    extras_total = sum(float(e["amount"] or 0) for e in extras_list)
+    gross = subtotal + extras_total
+    advance = max(0.0, float(payload.advance_amount or 0))
+    applied = min(advance, gross)
+    net_payable = round(gross - applied, 2)
+    carry_forward = round(max(0.0, advance - gross), 2)
+
+    if payload.commit_carryforward:
+        key = _advance_key(payload.entity_id, payload.client_id)
+        await db.dispatch_advance_ledger.update_one(
+            key,
+            {"$set": {**key, "balance": carry_forward,
+                      "updated_at": datetime.now(timezone.utc)}},
+            upsert=True,
+        )
+
+    from utils.dispatch_reports import build_officer_payslip_pdf
+    client_info = data.get("client_info") or {}
+    officer_name = (data.get("entity") or {}).get("name") or payload.entity_id
+    body = build_officer_payslip_pdf(
+        client_name=client_info.get("name"),
+        client_logo_url=client_info.get("logo_url"),
+        officer_name=officer_name,
+        date_from=data["date_from"], date_to=data["date_to"],
+        rows=data["items"],
+        show_financial=True,
+        extras=extras_list,
+        advance_amount=advance,
+        carry_forward=carry_forward,
+        net_payable=net_payable,
+    )
+    fname = f'payslip-{officer_name}-{data["date_from"]}-{data["date_to"]}.pdf'
+    return StreamingResponse(
+        io.BytesIO(body), media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 # ---------- Export (CSV / PDF) — respects financial permission ----------
 REPORT_TYPES = {
     "schedules": {

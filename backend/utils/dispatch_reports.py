@@ -219,6 +219,10 @@ def build_officer_payslip_pdf(
     date_to: str,
     rows: list,
     show_financial: bool,
+    extras: list | None = None,
+    advance_amount: float = 0.0,
+    carry_forward: float = 0.0,
+    net_payable: float | None = None,
 ) -> bytes:
     """Branded per-officer/per-client payslip in the layout the customer asked
     for (Arseas Security Service mockup).
@@ -393,6 +397,50 @@ def build_officer_payslip_pdf(
         style.append(('FONTNAME', (pin_idx, 1), (pin_idx, -2), 'Helvetica-Bold'))
     tbl.setStyle(TableStyle(style))
     story.append(tbl)
+
+    # ---- Adjustments block (Extras, Advance, Net Payable) ------------------
+    if show_financial and (extras or advance_amount or (net_payable is not None and net_payable != total_amount)):
+        story.append(Spacer(1, 0.4 * cm))
+        label_style = ParagraphStyle('adjLbl', parent=styles['Normal'], fontSize=10, alignment=2)  # right
+        amount_style = ParagraphStyle('adjAmt', parent=styles['Normal'], fontSize=10, alignment=2)
+        bold_style = ParagraphStyle('adjBold', parent=styles['Normal'], fontSize=11, alignment=2, fontName='Helvetica-Bold')
+
+        adj_rows = []
+        adj_rows.append([Paragraph("Subtotal", label_style),
+                         Paragraph(f"${total_amount:,.2f}", amount_style)])
+        for e in (extras or []):
+            lbl = str(e.get("label") or "Extra").strip() or "Extra"
+            amt = float(e.get("amount") or 0)
+            adj_rows.append([Paragraph(f"+ {lbl}", label_style),
+                             Paragraph(f"${amt:,.2f}", amount_style)])
+        if advance_amount:
+            adj_rows.append([Paragraph("- Advance / Adjustment", label_style),
+                             Paragraph(f"-${float(advance_amount):,.2f}", amount_style)])
+        computed_net = net_payable
+        if computed_net is None:
+            extras_total = sum(float((e.get("amount") or 0)) for e in (extras or []))
+            applied = min(float(advance_amount or 0), total_amount + extras_total)
+            computed_net = total_amount + extras_total - applied
+        adj_rows.append([Paragraph("Net Payable", bold_style),
+                         Paragraph(f"${float(computed_net):,.2f}", bold_style)])
+        if carry_forward and float(carry_forward) > 0:
+            note = ParagraphStyle('cf', parent=styles['Normal'], fontSize=9,
+                                  alignment=2, textColor=colors.HexColor('#B45309'))
+            adj_rows.append([Paragraph(
+                f"Unused advance carried forward to next period",
+                note),
+                Paragraph(f"${float(carry_forward):,.2f}", note)])
+
+        adj_tbl = Table(adj_rows, colWidths=[doc.width * 0.75, doc.width * 0.25], hAlign='RIGHT')
+        adj_tbl.setStyle(TableStyle([
+            ('LINEABOVE', (0, -2), (-1, -2), 1, colors.HexColor('#0F172A')),
+            ('BACKGROUND', (0, -2), (-1, -2), colors.HexColor('#F1F5F9')),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(adj_tbl)
 
     story.append(Spacer(1, 0.4*cm))
     doc.build(story)

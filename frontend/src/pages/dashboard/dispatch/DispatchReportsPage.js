@@ -8,7 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/components/ui/sonner';
-import { Download, FileText, FileSpreadsheet, ChevronRight, Trash2 } from 'lucide-react';
+import { Download, FileText, FileSpreadsheet, ChevronRight, Trash2, Plus, X } from 'lucide-react';
 import useAuthStore from '@/stores/authStore';
 import { hasPermission } from '@/lib/permissions';
 import { formatPin } from './_shared';
@@ -104,6 +104,7 @@ const DispatchReportsPage = () => {
   const [clientFilter, setClientFilter] = useState(''); // officer-only: filter shifts by client
   const [pendingDelete, setPendingDelete] = useState(null); // { id, date, officer_name, ... }
   const [deleting, setDeleting] = useState(false);
+  const [payslipDialog, setPayslipDialog] = useState(false);
 
   const confirmDelete = async () => {
     if (!pendingDelete?.id) return;
@@ -400,8 +401,8 @@ const DispatchReportsPage = () => {
                       </div>
                       <div className="flex justify-end">
                         {canExport && (
-                          <Button size="sm" onClick={() => downloadEntityDetail('pdf', { template: 'payslip' })} data-testid="download-payslip-pdf">
-                            <FileText className="w-4 h-4 mr-2" /> Download Payslip PDF
+                          <Button size="sm" onClick={() => setPayslipDialog(true)} data-testid="download-payslip-pdf">
+                            <FileText className="w-4 h-4 mr-2" /> Customize & Download
                           </Button>
                         )}
                       </div>
@@ -550,6 +551,22 @@ const DispatchReportsPage = () => {
         onExport={(fmt) => { downloadEntityDetail(fmt, { columns: pickedCols.join(',') || undefined }); setPickerOpen(false); }}
       />
 
+      {/* Payslip customization dialog */}
+      {payslipDialog && detail && isOfficerPayslip && (
+        <PayslipCustomizeDialog
+          open={payslipDialog}
+          onClose={() => setPayslipDialog(false)}
+          officerId={detail.entity_id}
+          officerName={detail.entity_name}
+          clientId={clientFilter}
+          clientName={detail.data?.client_info?.name}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          subtotal={Number(detail.data?.summary?.total_amount || 0)}
+          shifts={detail.data?.items || []}
+        />
+      )}
+
       {/* Delete confirmation dialog */}
       <Dialog open={!!pendingDelete} onOpenChange={(o) => !o && !deleting && setPendingDelete(null)}>
         <DialogContent className="max-w-md" data-testid="delete-report-dialog">
@@ -600,6 +617,239 @@ const ENTITY_EXPORT_COLS_FIN = [
   { key: 'billing_rate', label: 'Billing Rate' },
   { key: 'work_order_number', label: 'Work Order' },
 ];
+
+const PayslipCustomizeDialog = ({
+  open, onClose,
+  officerId, officerName,
+  clientId, clientName,
+  dateFrom, dateTo,
+  subtotal, shifts,
+}) => {
+  const [extras, setExtras] = useState([]);
+  const [advance, setAdvance] = useState('');
+  const [prevBalance, setPrevBalance] = useState(0);
+  const [downloading, setDownloading] = useState(false);
+  const [loadingBalance, setLoadingBalance] = useState(false);
+
+  // Load unused-advance carried from the last payslip
+  useEffect(() => {
+    if (!open || !officerId) return;
+    let alive = true;
+    setLoadingBalance(true);
+    (async () => {
+      try {
+        const { data } = await api.get('/dispatch/reports/advance-balance', {
+          params: { officer_id: officerId, client_id: clientId || undefined },
+        });
+        if (!alive) return;
+        const bal = Number(data?.balance || 0);
+        setPrevBalance(bal);
+        if (bal > 0) setAdvance(String(bal));
+      } catch { /* silent */ }
+      finally { if (alive) setLoadingBalance(false); }
+    })();
+    return () => { alive = false; };
+  }, [open, officerId, clientId]);
+
+  const extrasTotal = extras.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const gross = subtotal + extrasTotal;
+  const advanceNum = Math.max(0, Number(advance) || 0);
+  const applied = Math.min(advanceNum, gross);
+  const carryForward = Math.max(0, advanceNum - gross);
+  const netPayable = Math.max(0, gross - applied);
+
+  const addExtra = () => setExtras([...extras, { label: '', amount: '' }]);
+  const removeExtra = (i) => setExtras(extras.filter((_, idx) => idx !== i));
+  const updateExtra = (i, key, val) => {
+    setExtras(extras.map((e, idx) => (idx === i ? { ...e, [key]: val } : e)));
+  };
+
+  const download = async () => {
+    setDownloading(true);
+    try {
+      const payload = {
+        entity_id: officerId,
+        date_from: dateFrom, date_to: dateTo,
+        client_id: clientId || null,
+        advance_amount: advanceNum,
+        extras: extras
+          .filter((e) => (e.label || '').trim() || Number(e.amount) > 0)
+          .map((e) => ({
+            label: (e.label || 'Extra').trim() || 'Extra',
+            amount: Number(e.amount) || 0,
+          })),
+        commit_carryforward: true,
+      };
+      const res = await api.post(
+        '/dispatch/reports/export/entity-detail/payslip',
+        payload,
+        { responseType: 'blob' },
+      );
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `payslip-${officerName}-${dateFrom}-${dateTo}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Payslip downloaded');
+      onClose();
+    } catch (e) {
+      toast.error('Failed to generate payslip');
+    } finally { setDownloading(false); }
+  };
+
+  const money = (n) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && !downloading && onClose()}>
+      <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto" data-testid="payslip-customize-dialog">
+        <DialogHeader>
+          <DialogTitle>Customize payslip · {officerName}</DialogTitle>
+          <DialogDescription>
+            Review the shifts, add extras or an advance deduction, then download the PDF.
+            {clientName ? ` Client: ${clientName}.` : ''}
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Shifts review (read-only) */}
+        <div className="border border-[#E2E8F0] dark:border-[#27272A] rounded-lg overflow-x-auto">
+          <table className="w-full text-xs" data-testid="payslip-shifts-table">
+            <thead className="bg-[#F8FAFC] dark:bg-[#0F0F11] text-[#64748B] uppercase tracking-wider">
+              <tr>
+                <th className="px-2 py-2 text-left">Date</th>
+                <th className="px-2 py-2 text-left">Shift</th>
+                <th className="px-2 py-2 text-right">Hours</th>
+                <th className="px-2 py-2 text-right">Rate</th>
+                <th className="px-2 py-2 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E2E8F0] dark:divide-[#27272A]">
+              {shifts.length === 0 ? (
+                <tr><td colSpan={5} className="px-3 py-4 text-center text-[#64748B]">No shifts in this period</td></tr>
+              ) : shifts.map((r) => (
+                <tr key={r.id}>
+                  <td className="px-2 py-1.5">{r.date}</td>
+                  <td className="px-2 py-1.5">{r.shift_type || '—'}</td>
+                  <td className="px-2 py-1.5 text-right">{r.duty_hours ?? '—'}</td>
+                  <td className="px-2 py-1.5 text-right">{r.hourly_rate != null ? money(r.hourly_rate) : '—'}</td>
+                  <td className="px-2 py-1.5 text-right font-semibold">{r.total != null ? money(r.total) : '—'}</td>
+                </tr>
+              ))}
+              <tr className="bg-[#F8FAFC] dark:bg-[#0F0F11] font-semibold">
+                <td className="px-2 py-2" colSpan={4}>Subtotal</td>
+                <td className="px-2 py-2 text-right" data-testid="payslip-subtotal">{money(subtotal)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Extras */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold">Extra Payments (+)</h4>
+            <Button size="sm" variant="outline" onClick={addExtra} data-testid="payslip-add-extra">
+              <Plus className="w-4 h-4 mr-1" /> Add extra
+            </Button>
+          </div>
+          {extras.length === 0 ? (
+            <p className="text-xs text-[#64748B]">Add hotel fee, parking fee, or any other custom charge that increases the payout.</p>
+          ) : (
+            <div className="space-y-2">
+              {extras.map((e, i) => (
+                <div key={i} className="grid grid-cols-[1fr_140px_36px] gap-2 items-center" data-testid={`payslip-extra-row-${i}`}>
+                  <Input
+                    placeholder="Label (e.g. Hotel Fee)"
+                    value={e.label}
+                    onChange={(ev) => updateExtra(i, 'label', ev.target.value)}
+                    data-testid={`payslip-extra-label-${i}`}
+                  />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={e.amount}
+                    onChange={(ev) => updateExtra(i, 'amount', ev.target.value)}
+                    className="text-right"
+                    data-testid={`payslip-extra-amount-${i}`}
+                  />
+                  <Button
+                    variant="ghost" size="icon"
+                    onClick={() => removeExtra(i)}
+                    className="text-[#DC2626] hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                    aria-label="Remove extra"
+                    data-testid={`payslip-remove-extra-${i}`}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Advance / Adjustment */}
+        <div className="space-y-2">
+          <h4 className="text-sm font-semibold">Advance / Adjustment (−)</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+            <div>
+              <Label className="text-xs">Amount to deduct this period</Label>
+              <Input
+                type="number" step="0.01" min="0"
+                placeholder="0.00"
+                value={advance}
+                onChange={(e) => setAdvance(e.target.value)}
+                data-testid="payslip-advance-input"
+              />
+              {prevBalance > 0 && (
+                <p className="text-xs text-[#B45309] mt-1" data-testid="payslip-prev-balance">
+                  Carried forward from last period: {money(prevBalance)} (prefilled — edit as needed)
+                </p>
+              )}
+              {loadingBalance && <p className="text-xs text-[#64748B] mt-1">Checking previous balance…</p>}
+            </div>
+            <p className="text-xs text-[#64748B] pt-6">
+              Any amount larger than the net total carries forward to the next payslip automatically.
+            </p>
+          </div>
+        </div>
+
+        {/* Summary */}
+        <div className="rounded-xl border border-[#E2E8F0] dark:border-[#27272A] bg-[#F8FAFC] dark:bg-[#0F0F11] p-4 space-y-1">
+          <div className="flex justify-between text-sm"><span>Subtotal</span><span data-testid="payslip-summary-subtotal">{money(subtotal)}</span></div>
+          {extras.length > 0 && (
+            <div className="flex justify-between text-sm text-[#059669]"><span>+ Extras</span><span data-testid="payslip-summary-extras">{money(extrasTotal)}</span></div>
+          )}
+          {advanceNum > 0 && (
+            <div className="flex justify-between text-sm text-[#DC2626]">
+              <span>− Advance applied</span>
+              <span data-testid="payslip-summary-advance">-{money(applied)}</span>
+            </div>
+          )}
+          <div className="flex justify-between text-base font-bold border-t border-[#E2E8F0] dark:border-[#27272A] pt-2">
+            <span>Net Payable</span>
+            <span data-testid="payslip-summary-net">{money(netPayable)}</span>
+          </div>
+          {carryForward > 0 && (
+            <div className="flex justify-between text-xs text-[#B45309]">
+              <span>Unused advance → next period</span>
+              <span data-testid="payslip-summary-carry">{money(carryForward)}</span>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose} disabled={downloading} data-testid="payslip-cancel-btn">Cancel</Button>
+          <Button onClick={download} disabled={downloading} className="bg-[#4F46E5] hover:bg-[#4338CA] text-white" data-testid="payslip-download-btn">
+            <FileText className="w-4 h-4 mr-2" />
+            {downloading ? 'Generating…' : 'Download PDF'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
 
 const ColumnPickerDialog = ({ open, onClose, canFinancial, picked, onChange, onExport }) => {
   const all = canFinancial ? [...ENTITY_EXPORT_COLS, ...ENTITY_EXPORT_COLS_FIN] : ENTITY_EXPORT_COLS;
