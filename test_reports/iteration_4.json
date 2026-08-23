@@ -1,0 +1,47 @@
+{
+  "summary": "Backend-only verification after moving app from /app/OfficeflowV3 -> /app root and removing nested .git. All git-tracking checks and API smoke tests PASSED (5/5).",
+  "git_verification": {
+    "backend_files_tracked": 84,
+    "required_files_all_present": true,
+    "checked_files": [
+      "backend/server.py", "backend/pytest.ini", "backend/requirements.txt",
+      "backend/routes/auth.py", "backend/routes/dispatch.py", "backend/routes/dispatch_invoices.py",
+      "backend/routes/admin.py", "backend/routes/companies.py",
+      "backend/models/dispatch.py", "backend/models/user.py",
+      "backend/utils/auth.py", "backend/utils/dispatch_reports.py",
+      "backend/utils/permissions.py", "backend/utils/storage.py"
+    ],
+    "gitignore_excludes_backend_source": false,
+    "git_check_ignore_backend_routes_dispatch": "not ignored (exit 1)",
+    "nested_git_dirs_in_backend_or_frontend": false,
+    "branch": "main",
+    "head_commit": "367b722 Merge OfficeflowV3 app into root — fix GitHub push missing backend code",
+    "server_py_is_real_not_template": "257 lines, imports routes.dispatch etc.",
+    "dispatch_py_has_new_features": "_format_pin, COMPLETED_STATUSES, /schedules/import all present"
+  },
+  "backend_api_results": {
+    "POST /api/auth/login (admin@example.com/admin123)": "200 + access_token cookie set",
+    "GET /api/auth/me": "200, returns super_admin user",
+    "GET /api/dispatch/schedules": "200, items include post_pin_display + vendor_code",
+    "GET /api/dispatch/reports/by-officer?date_from=2026-06-01&date_to=2026-08-31": "200, valid shape",
+    "GET /api/dispatch/invoices/next-number": "200, number returned"
+  },
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_post_merge_smoke.py",
+    "/app/test_reports/pytest/post_merge_smoke.xml"
+  ],
+  "action_items": [
+    "Minor cleanup (non-blocking): /app/OfficeflowV3/ still exists on disk as a leftover directory containing only an empty frontend/node_modules folder. It is NOT tracked by git and does NOT affect functionality, but the task description said it 'should not exist anymore'. Consider `rm -rf /app/OfficeflowV3` to keep the workspace tidy."
+  ],
+  "critical_code_review_comments": [],
+  "updated_files": ["/app/backend/tests/test_post_merge_smoke.py"],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "N/A (not requested)"},
+  "test_credentials": "admin@example.com / admin123 (from /app/memory/test_credentials.md unavailable, credentials provided in request; login verified working)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Merge fix verified: git ls-files backend/ = 84 files (was 5 before fix). Supervisor is now using the default `backend` program at /app/backend (no more officeflow-v3-backend.conf). All 5 API smoke tests pass. Only cosmetic leftover is the empty /app/OfficeflowV3/frontend/node_modules directory - not tracked, not blocking.",
+  "rca_of_the_issue": "Before fix: nested /app/OfficeflowV3/.git caused outer /app git to treat OfficeflowV3 as an unregistered submodule, so `git push` only shipped the 5 outer template backend files. Fix moved contents up one level and deleted nested .git. Verified by `git ls-files backend/ | wc -l` = 84 and `git check-ignore -v backend/routes/dispatch.py` returning nothing."
+}
