@@ -58,3 +58,11 @@ Load this git and show preview https://github.com/Marketexpert3/OfficeflowV3.git
   - Frontend `DispatchReportsPage` "Export CSV" → "Export Excel" (and entity-detail column picker CSV → Excel).
   - Added `exceljs` npm package. `DispatchSchedulePage` now generates a styled .xlsx client-side that mirrors the on-screen table (pink header FBC9FF, tinted Date column, red-bold post pin, green city cells).
   - `ReportsPage` (attendance/payroll/overtime) `csvDownload` helper replaced with `excelDownload` — indigo header, banded rows.
+
+## Update 2026-02 Session (cont'd 4)
+- Shift statuses reduced to exactly three: **Not Started · Clocked In · Clocked Out**.
+- Introduced `COMPLETED_STATUSES = ["Clocked In", "Clocked Out"]`. Reports, aggregations, invoices and payslip computations now count both — so once an officer is Clocked In, the shift is treated as complete.
+- Startup `LEGACY_STATUS_MAP` migrates old values: `Complete/Completed → Clocked Out`; `Late Clocked In → Clocked In`; `Late Clocked Out / Early Clocked Out → Clocked Out`; `Cancelled/Absent → Not Started`. Verified: `Complete → Clocked Out` on 1 record.
+- Removed Cancel button from row menu; the legacy `/schedules/{sid}/cancel` endpoint now hard-deletes (backwards-compatible).
+- DispatchDashboardPage stat cards: replaced Late/Absent with Clocked In / Clocked Out counts.
+- DispatchReportsPage: removed Absent/Late/Early Out/Cancelled columns from By-Officer / By-Client / By-Vendor / By-Post-Site (they would always be 0 now). Copy updated to "Paid hours = shifts once Clocked In".
