@@ -8,7 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/components/ui/sonner';
-import { Download, FileText, FileSpreadsheet, ChevronRight } from 'lucide-react';
+import { Download, FileText, FileSpreadsheet, ChevronRight, Trash2 } from 'lucide-react';
 import useAuthStore from '@/stores/authStore';
 import { hasPermission } from '@/lib/permissions';
 import { formatPin } from './_shared';
@@ -73,6 +73,7 @@ const DispatchReportsPage = () => {
   const canView = hasPermission(user, 'dispatch.reports.view');
   const canExport = hasPermission(user, 'dispatch.reports.export');
   const canFinancial = hasPermission(user, 'dispatch.financial.view');
+  const canDelete = hasPermission(user, 'dispatch.schedule.delete');
 
   const [active, setActive] = useState('schedules');
   const [dateFrom, setDateFrom] = useState(isoDaysAgo(30));
@@ -101,6 +102,23 @@ const DispatchReportsPage = () => {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickedCols, setPickedCols] = useState([]);
   const [clientFilter, setClientFilter] = useState(''); // officer-only: filter shifts by client
+  const [pendingDelete, setPendingDelete] = useState(null); // { id, date, officer_name, ... }
+  const [deleting, setDeleting] = useState(false);
+
+  const confirmDelete = async () => {
+    if (!pendingDelete?.id) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/dispatch/schedules/${pendingDelete.id}`);
+      toast.success('Dispatch report deleted');
+      setPendingDelete(null);
+      await load();
+    } catch (e) {
+      toast.error(formatApiErrorDetail(e.response?.data?.detail) || 'Failed to delete');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const fetchDetail = useCallback(async (entity_type, entity_id, cid) => {
     setDetailLoading(true);
@@ -279,11 +297,14 @@ const DispatchReportsPage = () => {
             <div className="bg-white dark:bg-[#18181B] border border-[#E2E8F0] dark:border-[#27272A] rounded-xl overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-[#F8FAFC] dark:bg-[#0F0F11] text-left text-xs uppercase tracking-wider text-[#64748B]">
-                  <tr>{cols.map((c) => <th key={c.key} className="px-3 py-3">{c.label}</th>)}</tr>
+                  <tr>
+                    {cols.map((c) => <th key={c.key} className="px-3 py-3">{c.label}</th>)}
+                    {t.key === 'schedules' && canDelete && <th className="px-3 py-3 text-right">Actions</th>}
+                  </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E2E8F0] dark:divide-[#27272A]">
-                  {loading ? <tr><td colSpan={cols.length} className="px-4 py-8 text-center text-[#64748B]">Loading…</td></tr>
-                  : (data.items || []).length === 0 ? <tr><td colSpan={cols.length} className="px-4 py-8 text-center text-[#64748B]">No data</td></tr>
+                  {loading ? <tr><td colSpan={cols.length + (t.key === 'schedules' && canDelete ? 1 : 0)} className="px-4 py-8 text-center text-[#64748B]">Loading…</td></tr>
+                  : (data.items || []).length === 0 ? <tr><td colSpan={cols.length + (t.key === 'schedules' && canDelete ? 1 : 0)} className="px-4 py-8 text-center text-[#64748B]">No data</td></tr>
                   : data.items.map((r, i) => {
                     const clickable = ENTITY_TYPE_BY_TAB[t.key];
                     return (
@@ -302,6 +323,20 @@ const DispatchReportsPage = () => {
                           ) : (r[c.key] ?? '—')}
                         </td>
                       ))}
+                      {t.key === 'schedules' && canDelete && (
+                        <td className="px-3 py-2 text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-[#DC2626] hover:text-[#B91C1C] hover:bg-rose-50 dark:hover:bg-rose-950/30 h-8 px-2"
+                            onClick={(e) => { e.stopPropagation(); setPendingDelete(r); }}
+                            data-testid={`delete-report-btn-${i}`}
+                            aria-label="Delete dispatch report"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </td>
+                      )}
                     </tr>
                   );})}
                 </tbody>
@@ -514,6 +549,35 @@ const DispatchReportsPage = () => {
         onChange={setPickedCols}
         onExport={(fmt) => { downloadEntityDetail(fmt, { columns: pickedCols.join(',') || undefined }); setPickerOpen(false); }}
       />
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={!!pendingDelete} onOpenChange={(o) => !o && !deleting && setPendingDelete(null)}>
+        <DialogContent className="max-w-md" data-testid="delete-report-dialog">
+          <DialogHeader>
+            <DialogTitle>Delete this dispatch report?</DialogTitle>
+            <DialogDescription>
+              This permanently removes the schedule
+              {pendingDelete?.date ? ` on ${pendingDelete.date}` : ''}
+              {pendingDelete?.officer_name ? ` for ${pendingDelete.officer_name}` : ''}
+              {pendingDelete?.post_site_name ? ` at ${pendingDelete.post_site_name}` : ''}.
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setPendingDelete(null)} disabled={deleting} data-testid="delete-report-cancel">
+              Cancel
+            </Button>
+            <Button
+              className="bg-[#DC2626] hover:bg-[#B91C1C] text-white"
+              onClick={confirmDelete}
+              disabled={deleting}
+              data-testid="delete-report-confirm"
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
