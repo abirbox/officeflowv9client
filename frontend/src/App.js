@@ -1,55 +1,92 @@
-import { useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { ThemeProvider } from "@/contexts/ThemeContext";
+import { AppSettingsProvider } from "@/contexts/AppSettingsContext";
+import { PresenceProvider } from "@/contexts/PresenceContext";
+import { Toaster } from "@/components/ui/sonner";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import DashboardLayout from "@/layouts/DashboardLayout";
+import Login from "@/pages/auth/Login";
+import Register from "@/pages/auth/Register";
+import ForgotPassword from "@/pages/auth/ForgotPassword";
+import ResetPassword from "@/pages/auth/ResetPassword";
+import DashboardHome from "@/pages/dashboard/DashboardHome";
+import CompaniesPage from "@/pages/dashboard/CompaniesPage";  // legacy — hidden from nav
+import EmployeesPage from "@/pages/dashboard/EmployeesPage";
+import EmployeeDetailPage from "@/pages/dashboard/EmployeeDetailPage";
+import AttendancePage from "@/pages/dashboard/AttendancePage";
+import GPSTrackingPage from "@/pages/dashboard/GPSTrackingPage";
+import LiveMapPage from "@/pages/dashboard/LiveMapPage";
+import TasksPage from "@/pages/dashboard/TasksPage";
+import ShiftsPage from "@/pages/dashboard/ShiftsPage";
+import OvertimePage from "@/pages/dashboard/OvertimePage";
+import ReportsPage from "@/pages/dashboard/ReportsPage";
+import CalendarPage from "@/pages/dashboard/CalendarPage";
+import LeavesPage from "@/pages/dashboard/LeavesPage";
+import PayrollPage from "@/pages/dashboard/PayrollPage";
+import SettingsPage from "@/pages/dashboard/SettingsPage";
+import DispatchDashboardPage from "@/pages/dashboard/dispatch/DispatchDashboardPage";
+import DispatchSchedulePage from "@/pages/dashboard/dispatch/DispatchSchedulePage";
+import DispatchCalendarPage from "@/pages/dashboard/dispatch/DispatchCalendarPage";
+import DispatchReportsPage from "@/pages/dashboard/dispatch/DispatchReportsPage";
+import DispatchAuditPage from "@/pages/dashboard/dispatch/DispatchAuditPage";
+import DispatchInvoicesPage from "@/pages/dashboard/dispatch/DispatchInvoicesPage";
+import { ClientsPage, VendorsPage, OfficersPage, PostSitesPage } from "@/pages/dashboard/dispatch/EntityPages";
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
-import { HOME } from "@/constants/testIds";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
-
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          data-testid={HOME.emergentLink}
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
 
 function App() {
   return (
-    <div className="App">
-      <BrowserRouter>
+    <ThemeProvider>
+      <AppSettingsProvider>
+        <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Navigate to="/login" replace />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <PresenceProvider>
+                  <DashboardLayout />
+                </PresenceProvider>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<DashboardHome />} />
+            <Route path="employees" element={<EmployeesPage />} />
+            <Route path="employees/:id" element={<EmployeeDetailPage />} />
+            <Route path="companies" element={<CompaniesPage />} />
+            <Route path="attendance" element={<AttendancePage />} />
+            <Route path="gps" element={<GPSTrackingPage />} />
+            <Route path="live-map" element={<LiveMapPage />} />
+            <Route path="tasks" element={<TasksPage />} />
+            <Route path="shifts" element={<ShiftsPage />} />
+            <Route path="overtime" element={<OvertimePage />} />
+            <Route path="reports" element={<ReportsPage />} />
+            <Route path="calendar" element={<CalendarPage />} />
+            <Route path="leaves" element={<LeavesPage />} />
+            <Route path="payroll" element={<PayrollPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="dispatch" element={<DispatchDashboardPage />} />
+            <Route path="dispatch/schedules" element={<DispatchSchedulePage />} />
+            <Route path="dispatch/today" element={<DispatchSchedulePage todayOnly />} />
+            <Route path="dispatch/calendar" element={<DispatchCalendarPage />} />
+            <Route path="dispatch/reports" element={<DispatchReportsPage />} />
+            <Route path="dispatch/invoices" element={<DispatchInvoicesPage />} />
+            <Route path="dispatch/audit" element={<DispatchAuditPage />} />
+            <Route path="dispatch/clients" element={<ClientsPage />} />
+            <Route path="dispatch/vendors" element={<VendorsPage />} />
+            <Route path="dispatch/officers" element={<OfficersPage />} />
+            <Route path="dispatch/post-sites" element={<PostSitesPage />} />
           </Route>
         </Routes>
-      </BrowserRouter>
-    </div>
+        <Toaster />
+        </BrowserRouter>
+      </AppSettingsProvider>
+    </ThemeProvider>
   );
 }
 

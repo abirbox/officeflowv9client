@@ -1,74 +1,40 @@
-# OfficeFlowV3 Preview Record
+# OfficeFlowERP Import Record
 
 ## Original problem statement
-Load this git and show preview https://github.com/Marketexpert3/OfficeflowV3.git
+Load this git, No change all make same https://github.com/abirbox/OfficeFlowERP.git
 
 ## Architecture decisions
-- Cloned the repository's default branch into `/app/OfficeflowV3`.
-- Preserved tracked application source unchanged.
-- Installed the frontend's declared dependencies and started its existing CRA/CRACO development server on port 3001.
-- Used the repository's existing same-origin `/api` routing behavior for the preview.
+- Imported the repository into `/app/OfficeFlowERP` without changing tracked source files.
+- Started the existing React frontend from the imported repository on port 3001.
+- Reused the workspace's existing backend URL configuration only for preview loading; no repository environment files were created.
 
 ## User personas
-- OfficeFlow administrator or employee reviewing the existing ERP interface.
+- OfficeFlow administrator or employee previewing the existing ERP application.
 
 ## Core requirements
-- Use the default branch.
-- Run the existing project exactly as provided.
-- Show a working preview of the existing interface.
+- Preserve the repository exactly as provided.
+- Make the unchanged application available for preview.
 
 ## What's been implemented
-- 2026-08-23: Cloned the default branch from the requested GitHub repository.
-- 2026-08-23: Installed frontend dependencies with Yarn without changing tracked source files.
-- 2026-08-23: Started the unchanged frontend preview on port 3001.
-- 2026-08-23: Verified `/login` renders the OfficeFlow welcome screen, fields, and sign-in control.
-- 2026-08-23: Reassigned the externally mapped frontend port 3000 to this checkout and verified `https://officeflow-v3.preview.emergentagent.com/login` shows the requested OfficeFlow interface.
-- 2026-08-23: Connected the external `/api` ingress to the OfficeFlowV3 backend, added the development API proxy, and configured a generated runtime JWT secret.
-- 2026-08-23: Verified super admin login reaches `/dashboard` with the supplied credentials.
-
-## Known limitations
-- Dispatch WebSocket initialization logs a non-blocking early-close warning; core dashboard and authentication flows remain functional.
+- 2026-08-22: Cloned the repository at commit `cdc6cb6092175e603463e9bed7adfb9c42d9efc6`.
+- 2026-08-22: Installed frontend dependencies without modifying tracked source.
+- 2026-08-22: Started and visually verified the unchanged login screen at `http://localhost:3001/login`.
 
 ## Prioritized backlog
-- P0: Keep the OfficeFlowV3 backend, generated JWT runtime secret, and `/api` ingress routing active for authenticated preview access.
-- P1: Verify authenticated dashboard workflows against the imported backend.
-- P2: Improve dispatch WebSocket retry behavior if realtime dispatch is required.
+- P0: Keep the matching backend preview environment running for the imported repository.
+- P1: Verify additional dashboard workflows against the imported backend.
+- P2: Add no product changes unless explicitly requested.
 
 ## Next tasks
-- Review the authenticated dashboard at `https://officeflow-v3.preview.emergentagent.com/dashboard`.
-- Investigate dispatch WebSocket retry behavior if realtime updates are needed.
-## Update 2026-02 Session
-- Removed session timeout: JWT exp = 10 years, cookie max_age = 315360000. Persistent JWT_SECRET moved to /app/OfficeflowV3/backend/.env so tokens survive backend restarts.
-- Dispatch Schedule Post Pin format: Fixed backend projection bug in routes/dispatch.py `_name()` — added `code: 1` to the field projection so vendor `code` is returned. Frontend already renders `[VENDOR_CODE] #POST_PIN`.
-- Unique invoice index: Already present in server.py startup as `db.dispatch_invoices.create_index("invoice_number", unique=True)`. Verified enforcement at DB level (duplicate insert returns E11000).
+- Keep the imported checkout unchanged while validating its existing workflows.
 
-## Update 2026-02 Session (cont'd)
-- Vendor Code Everywhere: Added `post_pin_display` to /dispatch/schedules, /dispatch/reports/schedules, /dispatch/reports/by-post-site, /dispatch/reports/entity-detail. Frontend has shared `formatPin(row)` helper used by DispatchSchedulePage, DispatchCalendarPage (WeekGrid/DayList/DetailDialog) and DispatchReportsPage. Report CSV/PDF exports and payslip PDF switched to `post_pin_display`. Invoice PDF's Location cell now renders `VENDOR # PIN` (bold, first line) then the location text underneath.
-- Bulk CSV Import: New endpoints `GET /api/dispatch/schedules/import-template` and `POST /api/dispatch/schedules/import` (multipart CSV). Frontend has an "Import CSV" button on the Dispatch Schedule toolbar and a dialog with column instructions, template download, file picker, and a per-row error report. CSV falls back to `client_name`/`vendor_name` (or codes) when the post site lacks these.
-
-## Update 2026-02 Session (cont'd 2)
-- Made `work_order_number` optional on `ScheduleCreate`, in the create-schedule form ("Work Order Number" no longer marked required), and in the CSV import path.
-- CSV import: added `?dry_run=true` query param — validates every row but persists nothing. Response shape unchanged (`created_ids` empty).
-- CSV import: rows that duplicate an existing shift (same officer + date + start_time) now soft-skip via a `skipped: [{row, reason}]` list rather than fail as errors. Frontend Import CSV dialog gained a "Preview" button and displays separate Ready/Skipped/Errors badges + tables.
-
-## Update 2026-02 Session (cont'd 3)
-- All CSV export buttons switched to Excel (.xlsx):
-  - Added `openpyxl` to backend requirements; new `build_xlsx()` helper in `utils/dispatch_reports.py` renders styled workbooks (indigo header, banded rows, red-bold post pin, currency-aware widths, frozen header).
-  - Backend endpoints `/dispatch/reports/export` and `/dispatch/reports/export/entity-detail` now accept `format=xlsx`.
-  - Frontend `DispatchReportsPage` "Export CSV" → "Export Excel" (and entity-detail column picker CSV → Excel).
-  - Added `exceljs` npm package. `DispatchSchedulePage` now generates a styled .xlsx client-side that mirrors the on-screen table (pink header FBC9FF, tinted Date column, red-bold post pin, green city cells).
-  - `ReportsPage` (attendance/payroll/overtime) `csvDownload` helper replaced with `excelDownload` — indigo header, banded rows.
-
-## Update 2026-02 Session (cont'd 4)
-- Shift statuses reduced to exactly three: **Not Started · Clocked In · Clocked Out**.
-- Introduced `COMPLETED_STATUSES = ["Clocked In", "Clocked Out"]`. Reports, aggregations, invoices and payslip computations now count both — so once an officer is Clocked In, the shift is treated as complete.
-- Startup `LEGACY_STATUS_MAP` migrates old values: `Complete/Completed → Clocked Out`; `Late Clocked In → Clocked In`; `Late Clocked Out / Early Clocked Out → Clocked Out`; `Cancelled/Absent → Not Started`. Verified: `Complete → Clocked Out` on 1 record.
-- Removed Cancel button from row menu; the legacy `/schedules/{sid}/cancel` endpoint now hard-deletes (backwards-compatible).
-- DispatchDashboardPage stat cards: replaced Late/Absent with Clocked In / Clocked Out counts.
-- DispatchReportsPage: removed Absent/Late/Early Out/Cancelled columns from By-Officer / By-Client / By-Vendor / By-Post-Site (they would always be 0 now). Copy updated to "Paid hours = shifts once Clocked In".
-
-## Update 2026-02 Session (cont'd 5)
-- Invoices Preview & Customize: Users can now edit every line item before generating an invoice.
-- Backend `DispatchInvoiceCreate` grew an optional `lines: List[InvoiceLine]` field. When provided (from the Customize screen), `_build_invoice_context` uses those lines verbatim, recomputes each row's `total_amount = hours × rate`, and regenerates the grand total + amount-in-words so the PDF matches exactly what the user saw on screen. If absent, it falls back to auto-aggregation from completed schedules (existing behaviour).
-- Frontend: `Preview` button relabeled to `Preview & Customize`. On preview, the fetched lines are seeded into `form.lines` and rendered as an editable table with inputs for shift_date, location, work_order, actual_hours, rate. Row total updates live. `Add Line` inserts a blank custom line; per-row trash icon removes it. `Reset from schedules` re-fetches. Save & Download and Download PDF both send `form.lines`.
-- Verified E2E: 2 custom lines (10×25=250, 5.5×30=165) preview returned correct row totals, `total_amount=415.00`, `amount_in_words="Four Hundred & Fifteen Dollars."`.
+## Verification update
+- 2026-08-22: Added runtime-only JWT signing configuration outside the repository and restarted the backend.
+- 2026-08-22: Verified hosted login and dashboard at `https://erp-workflow-19.preview.emergentagent.com/dashboard` with the existing super admin account.
+- 2026-08-22: Improved Dispatch Schedule table alignment with stable default column widths, consistent padding, and responsive horizontal containment.
+- 2026-08-22: Verified column resizing from 142px to 177px and persistence after reload at desktop and mobile widths.
+## 2026-02 Iteration 4 — Location Filter Consistency Fix
+- Synced /app/backend with latest changes from /app/OfficeFlowERP/backend (dispatch_invoices.py + test fixtures)
+- Fixed shift_status='Complete' filter on GET /api/dispatch/invoices/locations so dropdown never offers a location that would yield an empty invoice
+- Updated all test fixtures to admin@example.com / admin123
+- Backend regression: 18/18 iter4 tests, 8/8 invoice regression tests pass

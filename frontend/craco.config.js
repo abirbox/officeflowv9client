@@ -108,6 +108,21 @@ let webpackConfig = {
 };
 
 webpackConfig.devServer = (devServerConfig) => {
+  const backendTarget = process.env.BACKEND_PROXY_TARGET;
+
+  if (backendTarget) {
+    devServerConfig.proxy = [
+      ...(Array.isArray(devServerConfig.proxy) ? devServerConfig.proxy : []),
+      {
+        context: ["/api"],
+        target: backendTarget,
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+      },
+    ];
+  }
+
   // Add health check endpoints if enabled
   if (config.enableHealthCheck && setupHealthEndpoints && healthPluginInstance) {
     const originalSetupMiddlewares = devServerConfig.setupMiddlewares;
