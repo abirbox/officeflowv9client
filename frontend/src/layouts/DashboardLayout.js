@@ -260,7 +260,7 @@ const DashboardLayout = () => {
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>My Account</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate('/dashboard/profile')}>
+                <DropdownMenuItem onClick={() => navigate('/dashboard/settings')}>
                   Profile Settings
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={toggleTheme}>
@@ -342,18 +342,11 @@ const DashboardLayout = () => {
                 </div>
               </div>
               <button
-                onClick={() => { navigate('/dashboard/profile'); setMobileMenuOpen(false); }}
+                onClick={() => { navigate('/dashboard/settings'); setMobileMenuOpen(false); }}
                 className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[#334155] dark:text-[#E4E4E7] hover:bg-[#F1F5F9] dark:hover:bg-[#27272A]"
                 data-testid="mobile-profile-btn"
               >
                 <User className="w-4 h-4" /> Profile
-              </button>
-              <button
-                onClick={() => { navigate('/dashboard/settings'); setMobileMenuOpen(false); }}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[#334155] dark:text-[#E4E4E7] hover:bg-[#F1F5F9] dark:hover:bg-[#27272A]"
-                data-testid="mobile-settings-btn"
-              >
-                <Settings className="w-4 h-4" /> Settings
               </button>
               <button
                 onClick={() => { setMobileMenuOpen(false); handleLogout(); }}
