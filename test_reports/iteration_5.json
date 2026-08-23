@@ -1,0 +1,26 @@
+{
+  "summary": "Verified preview URL is fully restored after killing stale craco process. All 6 requested checks passed: (1) Preview URL returns 200 and login page renders with OfficeFlow branding, email/password inputs & Sign In button. (2) Port 3000 now bound to node PID 21524 running /app/frontend/node_modules/@craco/craco/dist/scripts/start.js; /app/OfficeflowV3 does not exist. (3) E2E login with admin@example.com/admin123 succeeded and reached /dashboard. (4) /dashboard/dispatch/schedules loaded successfully; VENDOR # PIN pattern 'PTS # 123' matched in page text. (5) /dashboard/dispatch/invoices loaded; Generate Invoice dialog opens with 'Preview & Customize' button visible. (6) Backend healthy: GET /api/ = 200 ({\"message\":\"OfficeFlow API v1.0.0\"}), POST /api/auth/login = 200 with super_admin user returned.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dispatch Schedule", "issues": ["WebSocket wss://.../api/ws/dispatch fails to connect (console warning). Non-blocking but should be reviewed - either implement the WS endpoint or remove the client connection attempt."]}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_5.json"],
+  "action_items": [
+    "Optional: Fix or remove the /api/ws/dispatch WebSocket connection attempt - it fails silently and pollutes the browser console."
+  ],
+  "critical_code_review_comments": [
+    "Stale process root cause: supervisor's frontend program used to point to /app/OfficeflowV3/frontend and the orphaned node process kept holding port 3000 across supervisor restarts. Recommend adding a preStart hook in supervisor config (e.g., 'fuser -k 3000/tcp || true') so a leftover process cannot block the new binding again."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@example.com / admin123 (super_admin) - verified working",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Preview URL https://officeflow-v3.preview.emergentagent.com/ is healthy. Frontend served from /app/frontend, backend from /app/backend. Only lingering issue is a failing WS connection to /api/ws/dispatch (non-blocking).",
+  "rca of the issue": "Stale craco/node PID 3407 from removed /app/OfficeflowV3/frontend was still bound to port 3000. The new /app/frontend craco kept printing 'Something is already running on port 3000' and never bound. Fix (already applied by main agent): killed the stale process, restarted supervisor's frontend program - new craco (PID 21524) now correctly binds port 3000 from /app/frontend. Verified end-to-end via preview URL."
+}
