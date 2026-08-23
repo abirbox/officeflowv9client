@@ -12,6 +12,7 @@ import { Plus, Filter, X, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Mor
 import useAuthStore from '@/stores/authStore';
 import { hasPermission } from '@/lib/permissions';
 import { CONFIRM_BADGE } from './_shared';
+import { SearchableSelect } from '@/components/SearchableSelect';
 
 const SHIFT_TYPES = ['Morning', 'Afternoon', 'Evening', 'Night'];
 const CONF_STATUSES = ['Not Confirmed', 'Pending', 'Confirmed', 'Declined', 'No Response'];
@@ -907,36 +908,71 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
             <div><Label>Start Time *</Label><Input type="time" value={form.start_time || ''} onChange={(e) => setForm({ ...form, start_time: e.target.value })} data-testid="sf-start" /></div>
             <div><Label>End Time *</Label><Input type="time" value={form.end_time || ''} onChange={(e) => setForm({ ...form, end_time: e.target.value })} data-testid="sf-end" /></div>
             <div><Label>Client *</Label>
-              <Select value={form.client_id || ''} onValueChange={(v) => setForm({ ...form, client_id: v })}>
-                <SelectTrigger data-testid="sf-client"><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>{clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
-              </Select>
+              <SearchableSelect
+                value={form.client_id || ''}
+                onChange={(v) => setForm({ ...form, client_id: v })}
+                options={clients}
+                getLabel={(c) => c.name}
+                getSearch={(c) => `${c.name} ${c.code || ''} ${c.email || ''}`}
+                placeholder="Search clients…"
+                searchPlaceholder="Type client name or code"
+                emptyText="No clients match"
+                testid="sf-client"
+              />
             </div>
             <div><Label>Vendor *</Label>
-              <Select value={form.vendor_id || ''} onValueChange={(v) => setForm({ ...form, vendor_id: v })}>
-                <SelectTrigger data-testid="sf-vendor"><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>{vendors.map(v => <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>)}</SelectContent>
-              </Select>
+              <SearchableSelect
+                value={form.vendor_id || ''}
+                onChange={(v) => setForm({ ...form, vendor_id: v })}
+                options={vendors}
+                getLabel={(v) => v.name}
+                getSearch={(v) => `${v.name} ${v.code || ''} ${v.email || ''}`}
+                placeholder="Search vendors…"
+                searchPlaceholder="Type vendor name or code"
+                emptyText="No vendors match"
+                testid="sf-vendor"
+              />
             </div>
             <div><Label>Post Site *</Label>
               <div className="flex gap-2">
-                <Select value={form.post_site_id || ''} onValueChange={(v) => {
-                  const p = postSites.find(x => x.id === v);
-                  setForm({ ...form, post_site_id: v, client_id: p?.client_id || form.client_id, vendor_id: p?.vendor_id || form.vendor_id });
-                }}>
-                  <SelectTrigger data-testid="sf-post" className="flex-1"><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent>{postSites.map(p => <SelectItem key={p.id} value={p.id}>{p.post_pin} — {p.name}</SelectItem>)}</SelectContent>
-                </Select>
+                <div className="flex-1">
+                  <SearchableSelect
+                    value={form.post_site_id || ''}
+                    onChange={(v) => {
+                      const p = postSites.find(x => String(x.id) === String(v));
+                      setForm({
+                        ...form,
+                        post_site_id: v,
+                        client_id: p?.client_id || form.client_id,
+                        vendor_id: p?.vendor_id || form.vendor_id,
+                      });
+                    }}
+                    options={postSites}
+                    getLabel={(p) => `${p.post_pin || '—'} — ${p.name}`}
+                    getSearch={(p) => `${p.post_pin || ''} ${p.name || ''} ${p.city || ''}`}
+                    placeholder="Search post sites…"
+                    searchPlaceholder="Type pin, name or city"
+                    emptyText="No post sites match"
+                    testid="sf-post"
+                  />
+                </div>
                 <Button type="button" variant="outline" size="icon" title="New post site" onClick={() => setSiteDialogOpen(true)} data-testid="sf-post-new">
                   <Plus className="w-4 h-4" />
                 </Button>
               </div>
             </div>
             <div><Label>Security Officer *</Label>
-              <Select value={form.officer_id || ''} onValueChange={(v) => setForm({ ...form, officer_id: v })}>
-                <SelectTrigger data-testid="sf-officer"><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>{officers.filter(o => o.status === 'active').map(o => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}</SelectContent>
-              </Select>
+              <SearchableSelect
+                value={form.officer_id || ''}
+                onChange={(v) => setForm({ ...form, officer_id: v })}
+                options={officers.filter(o => o.status === 'active')}
+                getLabel={(o) => o.name}
+                getSearch={(o) => `${o.name} ${o.email || ''} ${o.contact_number || ''}`}
+                placeholder="Search officers…"
+                searchPlaceholder="Type officer name, email or phone"
+                emptyText="No officers match"
+                testid="sf-officer"
+              />
             </div>
             {canFinancial && <>
               <div><Label>Duty Rate</Label><Input type="number" value={form.duty_rate ?? ''} onChange={(e) => setForm({ ...form, duty_rate: e.target.value ? Number(e.target.value) : null })} data-testid="sf-duty-rate" /></div>
@@ -1263,36 +1299,60 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             <div><Label className="text-xs">Officer</Label>
-              <Select value={filters.officer_id || 'all'} onValueChange={(v) => setF('officer_id', v === 'all' ? '' : v)}>
-                <SelectTrigger data-testid="filter-officer"><SelectValue placeholder="All officers" /></SelectTrigger>
-                <SelectContent><SelectItem value="all">All officers</SelectItem>
-                  {officers.map(o => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={filters.officer_id || ''}
+                onChange={(v) => setF('officer_id', v)}
+                options={officers}
+                getLabel={(o) => o.name}
+                getSearch={(o) => `${o.name} ${o.email || ''} ${o.contact_number || ''}`}
+                placeholder="All officers"
+                searchPlaceholder="Type officer name…"
+                emptyText="No officers match"
+                testid="filter-officer"
+                allowClear
+              />
             </div>
             <div><Label className="text-xs">Vendor</Label>
-              <Select value={filters.vendor_id || 'all'} onValueChange={(v) => setF('vendor_id', v === 'all' ? '' : v)}>
-                <SelectTrigger data-testid="filter-vendor"><SelectValue placeholder="All vendors" /></SelectTrigger>
-                <SelectContent><SelectItem value="all">All vendors</SelectItem>
-                  {vendors.map(v => <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={filters.vendor_id || ''}
+                onChange={(v) => setF('vendor_id', v)}
+                options={vendors}
+                getLabel={(v) => v.name}
+                getSearch={(v) => `${v.name} ${v.code || ''}`}
+                placeholder="All vendors"
+                searchPlaceholder="Type vendor name or code…"
+                emptyText="No vendors match"
+                testid="filter-vendor"
+                allowClear
+              />
             </div>
             <div><Label className="text-xs">Client</Label>
-              <Select value={filters.client_id || 'all'} onValueChange={(v) => setF('client_id', v === 'all' ? '' : v)}>
-                <SelectTrigger data-testid="filter-client"><SelectValue placeholder="All clients" /></SelectTrigger>
-                <SelectContent><SelectItem value="all">All clients</SelectItem>
-                  {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={filters.client_id || ''}
+                onChange={(v) => setF('client_id', v)}
+                options={clients}
+                getLabel={(c) => c.name}
+                getSearch={(c) => `${c.name} ${c.code || ''}`}
+                placeholder="All clients"
+                searchPlaceholder="Type client name or code…"
+                emptyText="No clients match"
+                testid="filter-client"
+                allowClear
+              />
             </div>
             <div><Label className="text-xs">Post Site</Label>
-              <Select value={filters.post_site_id || 'all'} onValueChange={(v) => setF('post_site_id', v === 'all' ? '' : v)}>
-                <SelectTrigger data-testid="filter-post-site"><SelectValue placeholder="All post sites" /></SelectTrigger>
-                <SelectContent><SelectItem value="all">All post sites</SelectItem>
-                  {postSites.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={filters.post_site_id || ''}
+                onChange={(v) => setF('post_site_id', v)}
+                options={postSites}
+                getLabel={(p) => p.name}
+                getSearch={(p) => `${p.name} ${p.post_pin || ''} ${p.city || ''}`}
+                placeholder="All post sites"
+                searchPlaceholder="Type name, pin or city…"
+                emptyText="No post sites match"
+                testid="filter-post-site"
+                allowClear
+              />
             </div>
             <div><Label className="text-xs">Post Pin</Label>
               <Input value={filters.post_pin} onChange={(e) => setF('post_pin', e.target.value)} placeholder="PS-102" data-testid="filter-pin" />
