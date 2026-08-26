@@ -4,6 +4,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 
 from utils.auth import get_current_user
+from utils.tz import dhaka_today, dhaka_today_iso
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -23,7 +24,7 @@ async def get_dashboard_stats(request: Request, db = Depends(get_db)):
     total_employees = await db.users.count_documents({"role": {"$ne": "super_admin"}})
     active_employees = await db.users.count_documents({"status": "active"})
     
-    today = date.today().isoformat()
+    today = dhaka_today_iso()
     present_today = await db.attendance.count_documents({"date": today})
     active_gps = await db.gps_sessions.count_documents({"status": "active"})
     
@@ -58,7 +59,7 @@ async def get_all_employee_status(request: Request, db = Depends(get_db)):
     """Real-time snapshot of every employee's current status - for admin dashboard"""
     await require_admin(request, db)
     
-    today = date.today().isoformat()
+    today = dhaka_today_iso()
     employees = await db.users.find({}, {"password_hash": 0}).to_list(1000)
     
     result = []
@@ -120,7 +121,7 @@ async def get_employee_stats(
     """Monthly/yearly attendance stats + GPS history for an employee"""
     await require_admin(request, db)
     
-    today = date.today()
+    today = dhaka_today()
     target_year = year or today.year
     target_month = month or today.month
     

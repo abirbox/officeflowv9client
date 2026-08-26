@@ -12,9 +12,14 @@ import { Download, FileText, FileSpreadsheet, ChevronRight, Trash2, Plus } from 
 import useAuthStore from '@/stores/authStore';
 import { hasPermission } from '@/lib/permissions';
 import { formatPin } from './_shared';
+import { todayIso, dhakaDateIso, formatDateTime } from '@/lib/datetime';
 
-const isoToday = () => new Date().toISOString().slice(0, 10);
-const isoDaysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+const isoToday = () => todayIso();
+const isoDaysAgo = (n) => {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - n);
+  return dhakaDateIso(d);
+};
 
 // Dispatch financial values use USD.
 const formatCurrency = (value) => {
@@ -981,7 +986,7 @@ const downloadEntityDetail = async (fmt, opts = {}) => {
                           <div key={rec.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#E2E8F0] dark:border-[#27272A] px-3 py-2 text-xs" data-testid={`saved-payslip-${rec.id}`}>
                             <div className="flex flex-col">
                               <span className="font-semibold text-[#0F172A] dark:text-[#FAFAFA]">{rec.date_from} → {rec.date_to}</span>
-                              <span className="text-[#64748B]">Net {formatCurrency(rec.net_payment)}{rec.generated_at ? ` · ${new Date(rec.generated_at).toLocaleString()}` : ''}</span>
+                              <span className="text-[#64748B]">Net {formatCurrency(rec.net_payment)}{rec.generated_at ? ` · ${formatDateTime(rec.generated_at)}` : ''}</span>
                             </div>
                             <div className="flex flex-wrap gap-2">
                               <Button size="sm" variant="outline" onClick={() => window.open(`/api/dispatch/payslip-records/${rec.id}/pdf`, '_blank')} data-testid={`preview-payslip-${rec.id}`}>

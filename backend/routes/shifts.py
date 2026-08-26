@@ -7,7 +7,7 @@ import uuid
 from models.shifts import ShiftCreate, ShiftUpdate, ShiftResponse, ShiftSessionResponse, BulkShiftCreate
 from utils.auth import get_current_user
 from routes.attendance import start_auto_gps_session, stop_auto_gps_session
-from utils.tz import get_org_timezone, local_minutes_of_day, local_date_iso, to_local
+from utils.tz import get_org_timezone, local_minutes_of_day, local_date_iso, to_local, dhaka_today_iso
 from datetime import timezone as _tz_ignored  # noqa: F401 (kept for future)
 
 router = APIRouter(prefix="/shifts", tags=["Work Shifts"])
@@ -193,7 +193,7 @@ async def join_shift(shift_id: str, request: Request, db = Depends(get_db)):
     if shift.get("status") == "cancelled":
         raise HTTPException(status_code=400, detail="This shift was cancelled")
     
-    today = date.today().isoformat()
+    today = dhaka_today_iso()
     tz_code, tz_off = await get_org_timezone(db)
     today_local = local_date_iso(datetime.now(timezone.utc), tz_code, tz_off)
     today = today_local
@@ -264,7 +264,7 @@ async def end_shift(shift_id: str, request: Request, db = Depends(get_db)):
     if not shift:
         raise HTTPException(status_code=404, detail="Shift not found")
     
-    today = date.today().isoformat()
+    today = dhaka_today_iso()
     tz_code, tz_off = await get_org_timezone(db)
     today = local_date_iso(datetime.now(timezone.utc), tz_code, tz_off)
     session = await db.shift_sessions.find_one({"shift_id": shift_id, "user_id": user["_id"], "date": today, "status": "joined"}, {"_id": 0})

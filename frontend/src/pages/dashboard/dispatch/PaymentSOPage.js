@@ -13,6 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../../components/ui/select';
 import api, { formatApiErrorDetail } from '../../../lib/axios';
+import { dhakaDateIso } from '../../../lib/datetime';
 
 const money = (v) => `$${Number(v || 0).toFixed(2)}`;
 
@@ -26,7 +27,8 @@ const DATE_PRESETS = [
   { key: 'custom', label: 'Custom' },
 ];
 
-const fmtDate = (d) => d.toISOString().slice(0, 10);
+// ISO date pinned to Asia/Dhaka so range presets don't shift by browser zone.
+const fmtDate = (d) => dhakaDateIso(d);
 function presetRange(key) {
   const to = new Date();
   const from = new Date();

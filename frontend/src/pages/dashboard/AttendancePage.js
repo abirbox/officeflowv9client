@@ -7,6 +7,7 @@ import { CheckSquare, Clock, LogIn, LogOut, Calendar, MapPin, Radio, Building2, 
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/sonner';
 import useAuthStore from '@/stores/authStore';
+import { formatTime } from '@/lib/datetime';
 
 const AttendancePage = () => {
   const { user } = useAuthStore();
@@ -133,8 +134,6 @@ const AttendancePage = () => {
       );
     } else { doCheckout(null, null); }
   };
-
-  const formatTime = (isoString) => isoString ? new Date(isoString).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '-';
 
   if (loading) {
     return (<div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-4 border-[#4F46E5] border-t-transparent rounded-full animate-spin"></div></div>);

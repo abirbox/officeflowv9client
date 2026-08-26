@@ -10,6 +10,7 @@ import { Plus, FolderKanban, Calendar, MessageSquare, Building, Home } from 'luc
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/sonner';
 import useAuthStore from '@/stores/authStore';
+import { formatDate } from '@/lib/datetime';
 import {
   Dialog,
   DialogContent,
@@ -288,7 +289,7 @@ const TasksPage = () => {
                             {task.due_date && (
                               <div className="flex items-center gap-1">
                                 <Calendar className="w-3 h-3" />
-                                {new Date(task.due_date).toLocaleDateString()}
+                                {formatDate(task.due_date)}
                               </div>
                             )}
                           </div>

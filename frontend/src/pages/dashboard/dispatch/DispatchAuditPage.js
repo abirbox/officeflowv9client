@@ -9,6 +9,7 @@ import { toast } from '@/components/ui/sonner';
 import { ScrollText, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import useAuthStore from '@/stores/authStore';
 import { hasPermission } from '@/lib/permissions';
+import { formatDateTime } from '@/lib/datetime';
 
 const ACTION_BADGE = {
   create: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300',
@@ -187,16 +188,7 @@ const DispatchAuditPage = () => {
               return (
                 <tr key={row.id} data-testid={`audit-row-${i}`} className="hover:bg-[#F8FAFC] dark:hover:bg-[#0F0F11]">
                   <td className="px-4 py-3 whitespace-nowrap text-[#334155] dark:text-[#E4E4E7]">
-                    {new Date(row.at).toLocaleString('en-GB', {
-  timeZone: 'Asia/Dhaka',
-  day: '2-digit',
-  month: '2-digit',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hour12: true
-})}
+                    {formatDateTime(row.at, { withZone: true })}
                   </td>
                   <td className="px-4 py-3">
                     <span className="font-medium text-[#0F172A] dark:text-[#FAFAFA]">{row.actor_name || '—'}</span>

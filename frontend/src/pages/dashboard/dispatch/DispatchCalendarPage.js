@@ -8,6 +8,7 @@ import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import useAuthStore from '@/stores/authStore';
 import { hasPermission } from '@/lib/permissions';
 import { CONFIRM_BADGE, formatPin } from './_shared';
+import { dhakaDateIso, formatMonth, formatDate, todayIso } from '@/lib/datetime';
 
 const VIEWS = [
   { value: 'month', label: 'Month' },
@@ -16,10 +17,8 @@ const VIEWS = [
 ];
 
 function iso(d) {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  // ISO date pinned to Asia/Dhaka so grid days stay consistent regardless of viewer's browser zone.
+  return dhakaDateIso(d);
 }
 
 function addDays(d, n) {
@@ -186,13 +185,10 @@ const DispatchCalendarPage = () => {
   }, [rows]);
 
   const label = view === 'month'
-    ? cursor.toLocaleDateString('en-US', {
-        month: 'long',
-        year: 'numeric',
-      })
+    ? formatMonth(cursor)
     : view === 'week'
       ? `${iso(startOfWeek(cursor))} → ${iso(addDays(startOfWeek(cursor), 6))}`
-      : cursor.toDateString();
+      : formatDate(cursor);
 
   if (!canView) {
     return (
@@ -498,7 +494,7 @@ const MonthGrid = ({ cursor, byDate, onSelect }) => {
     'Sat',
   ];
 
-  const today = iso(new Date());
+  const today = todayIso();
 
   return (
     <div className="bg-white dark:bg-[#18181B] border border-[#E2E8F0] dark:border-[#27272A] rounded-xl overflow-hidden">
@@ -577,7 +573,7 @@ const WeekGrid = ({ cursor, byDate, onSelect }) => {
     (_, i) => addDays(start, i)
   );
 
-  const today = iso(new Date());
+  const today = todayIso();
 
   return (
     <div className="bg-white dark:bg-[#18181B] border border-[#E2E8F0] dark:border-[#27272A] rounded-xl overflow-hidden">
@@ -598,11 +594,7 @@ const WeekGrid = ({ cursor, byDate, onSelect }) => {
                     : 'bg-[#F8FAFC] dark:bg-[#0F0F11] text-[#64748B]'
                 }`}
               >
-                {d.toLocaleDateString('en-US', {
-                  weekday: 'short',
-                  month: 'short',
-                  day: 'numeric',
-                })}
+                {formatDate(d)}
               </div>
 
               <div className="p-2 space-y-2">

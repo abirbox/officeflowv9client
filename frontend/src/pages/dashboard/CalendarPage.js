@@ -4,26 +4,28 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { dhakaParts, formatMonth } from '@/lib/datetime';
 
 const CalendarPage = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
-  
-  const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
-  const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
-  const monthName = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
-  
+
+  const cursor = dhakaParts(currentDate);          // {y, m, d} in Asia/Dhaka
+  const daysInMonth = new Date(Date.UTC(cursor.y, cursor.m, 0)).getUTCDate();
+  const firstDay = new Date(Date.UTC(cursor.y, cursor.m - 1, 1)).getUTCDay();
+  const monthName = formatMonth(currentDate);
+
   const days = [];
   for (let i = 0; i < firstDay; i++) days.push(null);
   for (let i = 1; i <= daysInMonth; i++) days.push(i);
-  
-  const today = new Date();
-  const isToday = (day) => 
-    day === today.getDate() && 
-    currentDate.getMonth() === today.getMonth() && 
-    currentDate.getFullYear() === today.getFullYear();
+
+  const todayParts = dhakaParts(new Date());
+  const isToday = (day) =>
+    day === todayParts.d &&
+    cursor.m === todayParts.m &&
+    cursor.y === todayParts.y;
 
   const changeMonth = (delta) => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + delta, 1));
+    setCurrentDate(new Date(Date.UTC(cursor.y, cursor.m - 1 + delta, 1)));
   };
 
   return (

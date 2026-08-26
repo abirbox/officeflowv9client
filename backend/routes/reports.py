@@ -3,6 +3,7 @@ from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 
 from utils.auth import get_current_user
+from utils.tz import dhaka_now
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -23,7 +24,7 @@ async def summary(request: Request, db=Depends(get_db), month: int = None, year:
     """Aggregate stats across attendance, shifts, payroll, leaves, overtime for a month.
     Defaults to the current month in server clock (Asia/Dhaka default via zoneinfo)."""
     await require_manager(request, db)
-    now = datetime.now(timezone.utc)
+    now = dhaka_now()
     y = year or now.year
     m = month or now.month
     start = f"{y}-{m:02d}-01"
@@ -87,7 +88,7 @@ async def summary(request: Request, db=Depends(get_db), month: int = None, year:
 @router.get("/attendance")
 async def attendance_report(request: Request, db=Depends(get_db), month: int = None, year: int = None, user_id: str = None):
     await require_manager(request, db)
-    now = datetime.now(timezone.utc)
+    now = dhaka_now()
     y = year or now.year
     m = month or now.month
     start = f"{y}-{m:02d}-01"
@@ -124,7 +125,7 @@ async def attendance_report(request: Request, db=Depends(get_db), month: int = N
 @router.get("/payroll")
 async def payroll_report(request: Request, db=Depends(get_db), month: int = None, year: int = None):
     await require_manager(request, db)
-    now = datetime.now(timezone.utc)
+    now = dhaka_now()
     y = year or now.year
     m = month or now.month
     records = await db.payroll.find({"month": m, "year": y}, {"_id": 0}).to_list(5000)

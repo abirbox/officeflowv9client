@@ -13,6 +13,7 @@ import useAuthStore from '@/stores/authStore';
 import { hasPermission } from '@/lib/permissions';
 import { CONFIRM_BADGE } from './_shared';
 import { SearchableSelect } from '@/components/SearchableSelect';
+import { todayIso, dhakaDateIso } from '@/lib/datetime';
 
 const SHIFT_TYPES = ['Morning', 'Afternoon', 'Evening', 'Night'];
 const CONF_STATUSES = ['Not Confirmed', 'Pending', 'Confirmed', 'Declined', 'No Response'];
@@ -201,11 +202,11 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
     todayOnly ? (() => {
       const today = new Date();
       const yesterday = new Date(today);
-      yesterday.setDate(today.getDate() - 1);
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
       return {
         ...emptyFilters,
-        date_from: yesterday.toISOString().slice(0, 10),
-        date_to: today.toISOString().slice(0, 10),
+        date_from: dhakaDateIso(yesterday),
+        date_to: dhakaDateIso(today),
       };
     })() : emptyFilters
   );
@@ -515,7 +516,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
   const openCreate = () => {
     setEditing(null);
     setScheduleMode('once');
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIso();
     setForm({
       date: today,
       date_from: today,

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MapPin, Play, Square, Navigation, TrendingUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/sonner';
+import { formatDate } from '@/lib/datetime';
 
 const GPSTrackingPage = () => {
   const [activeSession, setActiveSession] = useState(null);
@@ -223,7 +224,7 @@ const GPSTrackingPage = () => {
                   <div key={session.id} className="p-3 bg-[#F8FAFC] dark:bg-[#27272A] rounded-lg">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm font-medium text-[#0F172A] dark:text-[#FAFAFA]">
-                        {new Date(session.started_at).toLocaleDateString()}
+                        {formatDate(session.started_at)}
                       </span>
                       <Badge variant="secondary" className="text-xs">
                         {session.status}

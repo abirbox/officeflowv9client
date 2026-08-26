@@ -16,6 +16,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import ShiftCommentsDialog from '@/components/ShiftCommentsDialog';
 import BulkAssignShiftDialog from '@/components/BulkAssignShiftDialog';
+import { firstOfMonthIso, lastOfMonthIso } from '@/lib/datetime';
 
 const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -30,9 +31,8 @@ const ShiftsPage = () => {
   const [commentsShift, setCommentsShift] = useState(null);
   const isAdmin = user && ['super_admin', 'admin', 'hr', 'manager'].includes(user.role);
 
-  const today = new Date();
-  const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
-  const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
+  const firstDayOfMonth = firstOfMonthIso();
+  const lastDayOfMonth = lastOfMonthIso();
 
   const [form, setForm] = useState({
     user_id: '', title: 'Regular Shift', work_location: 'in_office',

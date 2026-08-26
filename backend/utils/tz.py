@@ -1,10 +1,26 @@
 """Timezone helpers. Default org timezone = Asia/Dhaka (UTC+6) unless overridden in app_settings."""
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo
 from typing import Optional
 
 DEFAULT_TZ = "Asia/Dhaka"
 DEFAULT_OFFSET_HOURS = 6.0
+DHAKA_TZ = ZoneInfo(DEFAULT_TZ)
+
+
+def dhaka_now() -> datetime:
+    """Current wall-clock time in Asia/Dhaka (tz-aware)."""
+    return datetime.now(timezone.utc).astimezone(DHAKA_TZ)
+
+
+def dhaka_today() -> date:
+    """Today's calendar date in Asia/Dhaka (never in UTC/browser tz)."""
+    return dhaka_now().date()
+
+
+def dhaka_today_iso() -> str:
+    """ISO date string (YYYY-MM-DD) for today in Asia/Dhaka."""
+    return dhaka_today().isoformat()
 
 
 async def get_org_timezone(db) -> tuple[str, float]:

@@ -14,11 +14,12 @@ import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/
 import { Checkbox } from '../../../components/ui/checkbox';
 import { Textarea } from '../../../components/ui/textarea';
 import api, { formatApiErrorDetail } from '../../../lib/axios';
+import { todayIso, dhakaDateIso } from '../../../lib/datetime';
 
 const emptyForm = {
   client_id: '', vendor_id: '',
   post_site_ids: [],
-  invoice_number: '', invoice_date: new Date().toISOString().slice(0, 10),
+  invoice_number: '', invoice_date: todayIso(),
   billing_period_from: '', billing_period_to: '',
   notes: '',
   // `lines` becomes populated on Preview; the user can then edit each row,
@@ -226,8 +227,8 @@ const DispatchInvoicesPage = () => {
     setForm({
       ...emptyForm,
       invoice_number: nextNumber,
-      billing_period_from: from.toISOString().slice(0, 10),
-      billing_period_to: to.toISOString().slice(0, 10),
+      billing_period_from: dhakaDateIso(from),
+      billing_period_to: dhakaDateIso(to),
     });
     setEditingId(null);
     setPreview(null);
@@ -241,7 +242,7 @@ const DispatchInvoicesPage = () => {
       vendor_id: inv.vendor_id || '',
       post_site_ids: inv.post_site_ids || (inv.post_site_id ? [inv.post_site_id] : []),
       invoice_number: inv.invoice_number || '',
-      invoice_date: inv.invoice_date || new Date().toISOString().slice(0, 10),
+      invoice_date: inv.invoice_date || todayIso(),
       billing_period_from: inv.billing_period_from || '',
       billing_period_to: inv.billing_period_to || '',
       notes: inv.notes || '',

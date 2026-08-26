@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MapPin, RefreshCw, Users, Radio, Search, Crosshair, Building2 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { formatTime } from '@/lib/datetime';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -181,7 +182,7 @@ const LiveMapPage = () => {
                         <p className="font-semibold">{emp.name}</p>
                         <p className="text-xs text-gray-600">{emp.email}</p>
                         <p className="text-xs mt-1">Status: <span className="font-medium capitalize">{emp.status.replace('_', ' ')}</span></p>
-                        {emp.check_in && <p className="text-xs">Started: {new Date(emp.check_in).toLocaleTimeString()}</p>}
+                        {emp.check_in && <p className="text-xs">Started: {formatTime(emp.check_in)}</p>}
                       </div>
                     </Popup>
                   </Marker>

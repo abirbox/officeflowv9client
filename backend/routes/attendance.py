@@ -10,6 +10,7 @@ from models.attendance import (
     AttendanceStats,
 )
 from utils.auth import get_current_user
+from utils.tz import dhaka_today_iso
 
 router = APIRouter(prefix="/attendance", tags=["Attendance"])
 
@@ -97,7 +98,7 @@ async def check_in(data: AttendanceCheckIn, request: Request, db = Depends(get_d
     user = await get_current_user(request, db)
     user_id = user["_id"]
     
-    today = date.today().isoformat()
+    today = dhaka_today_iso()
     existing = await db.attendance.find_one({"user_id": user_id, "date": today})
     now_iso = datetime.now(timezone.utc).isoformat()
     location = {"latitude": data.latitude, "longitude": data.longitude} if data.latitude and data.longitude else None
@@ -168,7 +169,7 @@ async def check_out(data: AttendanceCheckOut, request: Request, db = Depends(get
     user = await get_current_user(request, db)
     user_id = user["_id"]
     
-    today = date.today().isoformat()
+    today = dhaka_today_iso()
     attendance = await db.attendance.find_one({"user_id": user_id, "date": today})
     
     if not attendance:
@@ -238,7 +239,7 @@ async def get_today_attendance(request: Request, db = Depends(get_db)):
     user = await get_current_user(request, db)
     user_id = user["_id"]
     
-    today = date.today().isoformat()
+    today = dhaka_today_iso()
     attendance = await db.attendance.find_one({"user_id": user_id, "date": today}, {"_id": 0})
     
     if not attendance:

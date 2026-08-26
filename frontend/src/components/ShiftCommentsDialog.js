@@ -8,15 +8,9 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/sonner';
 import { Send, MessageCircle } from 'lucide-react';
+import { formatDateTime } from '@/lib/datetime';
 
-const formatTime = (iso) => {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, {
-      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-    });
-  } catch { return ''; }
-};
+const formatTime = (iso) => formatDateTime(iso);
 
 const roleBadge = (role) => {
   if (!role) return null;

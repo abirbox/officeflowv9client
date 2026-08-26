@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ArrowLeft, Clock, Calendar, MapPin, TrendingUp, Shield } from 'lucide-react';
 import { toast } from '@/components/ui/sonner';
 import useAuthStore from '@/stores/authStore';
+import { formatTime, formatDateTime } from '@/lib/datetime';
 import {
   Select,
   SelectContent,
@@ -149,7 +150,7 @@ const EmployeeDetailPage = () => {
                   <div key={rec.id} className="p-3 bg-[#F8FAFC] dark:bg-[#27272A] rounded-lg flex items-center justify-between">
                     <div>
                       <p className="font-medium text-[#0F172A] dark:text-[#FAFAFA]">{rec.date}</p>
-                      <p className="text-xs text-[#64748B]">In: {rec.check_in ? new Date(rec.check_in).toLocaleTimeString() : '-'} · Out: {rec.check_out ? new Date(rec.check_out).toLocaleTimeString() : '-'}</p>
+                      <p className="text-xs text-[#64748B]">In: {rec.check_in ? formatTime(rec.check_in) : '-'} · Out: {rec.check_out ? formatTime(rec.check_out) : '-'}</p>
                     </div>
                     <Badge>{rec.total_hours?.toFixed(2) || 0}h</Badge>
                   </div>
@@ -171,7 +172,7 @@ const EmployeeDetailPage = () => {
                 {stats.gps_sessions.map((s) => (
                   <div key={s.id} className="p-3 bg-[#F8FAFC] dark:bg-[#27272A] rounded-lg">
                     <div className="flex items-center justify-between">
-                      <p className="font-medium text-[#0F172A] dark:text-[#FAFAFA] text-sm">{new Date(s.started_at).toLocaleString()}</p>
+                      <p className="font-medium text-[#0F172A] dark:text-[#FAFAFA] text-sm">{formatDateTime(s.started_at)}</p>
                       <Badge variant={s.status === 'active' ? 'default' : 'secondary'}>{s.status}</Badge>
                     </div>
                     <p className="text-xs text-[#64748B] mt-1">

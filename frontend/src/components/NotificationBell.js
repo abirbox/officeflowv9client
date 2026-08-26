@@ -8,6 +8,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { formatDateTime } from '@/lib/datetime';
 
 const NotificationBell = () => {
   const [notifs, setNotifs] = useState([]);
@@ -101,7 +102,7 @@ const NotificationBell = () => {
                 <div className="flex-1">
                   <p className={`text-sm ${!n.read ? 'font-semibold' : ''} text-[#0F172A] dark:text-[#FAFAFA]`}>{n.title}</p>
                   <p className="text-xs text-[#64748B] mt-0.5">{n.message}</p>
-                  <p className="text-xs text-[#94a3b8] mt-1">{new Date(n.created_at).toLocaleString()}</p>
+                  <p className="text-xs text-[#94a3b8] mt-1">{formatDateTime(n.created_at)}</p>
                 </div>
               </div>
             </DropdownMenuItem>

@@ -11,13 +11,13 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+import { firstOfMonthIso, lastOfMonthIso } from '@/lib/datetime';
 
 const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const BulkAssignShiftDialog = ({ open, onOpenChange, employees, onDone }) => {
-  const today = new Date();
-  const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
-  const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
+  const firstDayOfMonth = firstOfMonthIso();
+  const lastDayOfMonth = lastOfMonthIso();
 
   const [selected, setSelected] = useState([]);
   const [busy, setBusy] = useState(false);

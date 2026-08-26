@@ -3,6 +3,8 @@ from io import BytesIO
 from datetime import datetime, timezone
 from bson import ObjectId
 
+from utils.tz import dhaka_today
+
 
 async def build_payslip_pdf(db, record: dict) -> tuple[bytes, str]:
     """Return (pdf_bytes, invoice_no) for a payroll record dict."""
@@ -57,7 +59,7 @@ async def build_payslip_pdf(db, record: dict) -> tuple[bytes, str]:
     info_right = [
         Paragraph("<b>Pay Period</b>", styles['LabelR']),
         Paragraph(period, styles['ValueR']),
-        Paragraph(f"Issued: {datetime.now(timezone.utc).date().isoformat()}", styles['LabelR']),
+        Paragraph(f"Issued: {dhaka_today().isoformat()} (Asia/Dhaka)", styles['LabelR']),
     ]
     if company:
         info_left.append(Paragraph(f"<font color='#64748B'>Company: {company.get('name', '')}</font>", styles['Muted']))

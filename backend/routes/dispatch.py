@@ -24,6 +24,7 @@ from utils.permissions import (
     ALL_PERMISSIONS, FINANCIAL_FIELDS,
 )
 from utils.dispatch_reports import build_csv, build_pdf, build_xlsx
+from utils.tz import dhaka_today, dhaka_today_iso
 
 # Temporary scheduling placeholders.
 # These are stored directly in officer_id and do not require
@@ -1602,7 +1603,7 @@ async def list_audit_actors(request: Request, db=Depends(get_db)):
 async def dashboard_stats(request: Request, db=Depends(get_db)):
     user = await get_current_user(request, db)
     require_permission(user, "dispatch.dashboard.view")
-    today = date.today().isoformat()
+    today = dhaka_today_iso()
     base = {"date": today}
     stats = {
         "today_total": await db.dispatch_schedules.count_documents(base),
@@ -1640,7 +1641,7 @@ async def dashboard_stats(request: Request, db=Depends(get_db)):
 # =====================================================================
 def _validate_date_range(date_from: str | None, date_to: str | None):
     """Enforce 3-month cap on report queries. Returns (from, to) strings."""
-    today = date.today()
+    today = dhaka_today()
     if not date_to:
         date_to = today.isoformat()
     if not date_from:

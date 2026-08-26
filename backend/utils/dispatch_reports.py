@@ -2,7 +2,8 @@
 import csv
 import io
 import os
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, letter, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -10,6 +11,13 @@ from reportlab.lib.units import cm, inch
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image,
 )
+
+APP_TZ = ZoneInfo("Asia/Dhaka")
+
+
+def _dhaka_now_str() -> str:
+    """Current wall-clock time in Asia/Dhaka (UTC+6) for report footers."""
+    return datetime.now(timezone.utc).astimezone(APP_TZ).strftime("%Y-%m-%d %H:%M")
 
 
 
@@ -428,7 +436,7 @@ def build_pdf(title: str, subtitle: str, rows: list, columns: list) -> bytes:
 
     story.append(
         Paragraph(
-            f"Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
+            f"Generated {_dhaka_now_str()} (Asia/Dhaka)",
             ParagraphStyle(
                 'f',
                 parent=styles['Normal'],
