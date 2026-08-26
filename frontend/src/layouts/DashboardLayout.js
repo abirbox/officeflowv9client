@@ -29,8 +29,11 @@ import {
   ClipboardList,
   ScrollText,
   User,
+  ArrowLeftRight,
+  Briefcase,
 } from 'lucide-react';
 import { hasPermission, hasAnyDispatchPerm } from '@/lib/permissions';
+import usePortalStore from '@/stores/portalStore';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -73,6 +76,7 @@ const dispatchNavigation = [
   { name: 'Dispatch Calendar', href: '/dashboard/dispatch/calendar', icon: Calendar, perm: 'dispatch.schedule.view' },
   { name: 'Dispatch Reports', href: '/dashboard/dispatch/reports', icon: BarChart3, perm: 'dispatch.reports.view' },
   { name: 'Invoices', href: '/dashboard/dispatch/invoices', icon: FileText, perm: 'dispatch.reports.view' },
+  { name: 'Payment (SO)', href: '/dashboard/dispatch/payment-so', icon: DollarSign, perm: 'dispatch.officers.view' },
   { name: 'Clients', href: '/dashboard/dispatch/clients', icon: Building2, perm: 'dispatch.clients.view' },
   { name: 'Vendors', href: '/dashboard/dispatch/vendors', icon: Building2, perm: 'dispatch.vendors.view' },
   { name: 'Security Officers', href: '/dashboard/dispatch/officers', icon: Shield, perm: 'dispatch.officers.view' },
@@ -84,6 +88,7 @@ const DashboardLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { user, logout } = useAuthStore();
+  const { portal, setPortal, clearPortal } = usePortalStore();
   const { theme, toggleTheme } = useTheme();
   const { settings } = useAppSettings();
   const brandName = settings?.brand_name || 'OfficeFlow';
@@ -92,10 +97,29 @@ const DashboardLayout = () => {
   const location = useLocation();
 
   const userRole = user?.role || 'employee';
-  const navigation = allNavigation.filter((item) => item.roles.includes(userRole));
-  const dispatchNav = hasAnyDispatchPerm(user)
+  const canDispatch = hasAnyDispatchPerm(user);
+  // Users without dispatch permission are locked to the Employee Portal.
+  const effectivePortal = canDispatch ? portal : 'employee';
+  const showPortalPopup = canDispatch && !portal;
+
+  const employeeNav = allNavigation.filter((item) => item.roles.includes(userRole));
+  const dispatchNav = canDispatch
     ? dispatchNavigation.filter((item) => hasPermission(user, item.perm))
     : [];
+  const navigation = effectivePortal === 'dispatch' ? [] : employeeNav;
+  const activeDispatchNav = effectivePortal === 'dispatch' ? dispatchNav : [];
+
+  const dispatchHome = () => (dispatchNav[0]?.href || '/dashboard/dispatch');
+  const choosePortal = (p) => {
+    setPortal(p);
+    navigate(p === 'dispatch' ? dispatchHome() : '/dashboard');
+  };
+  const switchPortal = () => {
+    const target = effectivePortal === 'dispatch' ? 'employee' : 'dispatch';
+    setPortal(target);
+    navigate(target === 'dispatch' ? dispatchHome() : '/dashboard');
+    setMobileMenuOpen(false);
+  };
 
   useEffect(() => {
     const handleResize = () => {
@@ -112,6 +136,7 @@ const DashboardLayout = () => {
   }, []);
 
   const handleLogout = async () => {
+    clearPortal();
     await logout();
     navigate('/login');
   };
@@ -120,6 +145,46 @@ const DashboardLayout = () => {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#09090B]">
+      {/* Portal selection popup — shown after login for users with dispatch access */}
+      {showPortalPopup && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" data-testid="portal-select-overlay">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.25 }}
+            className="bg-white dark:bg-[#18181B] rounded-2xl border border-[#E2E8F0] dark:border-[#27272A] shadow-2xl p-8 max-w-lg w-full"
+          >
+            <h2 className="text-2xl font-bold text-[#0F172A] dark:text-[#FAFAFA] text-center">Choose your workspace</h2>
+            <p className="text-sm text-[#64748B] dark:text-[#A1A1AA] text-center mt-2 mb-6">
+              You have access to both portals. Pick where to start — you can switch anytime.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <button
+                onClick={() => choosePortal('employee')}
+                data-testid="portal-select-employee"
+                className="group flex flex-col items-center gap-3 p-6 rounded-xl border border-[#E2E8F0] dark:border-[#27272A] hover:border-[#4F46E5] hover:bg-[#4F46E5]/5 transition-colors"
+              >
+                <span className="w-12 h-12 rounded-xl bg-[#4F46E5]/10 text-[#4F46E5] flex items-center justify-center">
+                  <Briefcase className="w-6 h-6" />
+                </span>
+                <span className="font-semibold text-[#0F172A] dark:text-[#FAFAFA]">Go to Employee Portal</span>
+                <span className="text-xs text-[#64748B] dark:text-[#A1A1AA] text-center">HR, attendance, shifts, payroll & more</span>
+              </button>
+              <button
+                onClick={() => choosePortal('dispatch')}
+                data-testid="portal-select-dispatch"
+                className="group flex flex-col items-center gap-3 p-6 rounded-xl border border-[#E2E8F0] dark:border-[#27272A] hover:border-[#4F46E5] hover:bg-[#4F46E5]/5 transition-colors"
+              >
+                <span className="w-12 h-12 rounded-xl bg-[#4F46E5]/10 text-[#4F46E5] flex items-center justify-center">
+                  <Truck className="w-6 h-6" />
+                </span>
+                <span className="font-semibold text-[#0F172A] dark:text-[#FAFAFA]">Go to Dispatch Portal</span>
+                <span className="text-xs text-[#64748B] dark:text-[#A1A1AA] text-center">Schedules, clients, officers & payments</span>
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
       {/* Desktop Sidebar */}
       <motion.aside
         initial={false}
@@ -171,6 +236,12 @@ const DashboardLayout = () => {
 
           {/* Navigation */}
           <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+            {sidebarOpen && (
+              <div className="mb-2 px-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#94A3B8] dark:text-[#71717A]" data-testid="active-portal-label">
+                {effectivePortal === 'dispatch' ? <Truck className="w-3.5 h-3.5" /> : <Briefcase className="w-3.5 h-3.5" />}
+                {effectivePortal === 'dispatch' ? 'Dispatch Portal' : 'Employee Portal'}
+              </div>
+            )}
             {navigation.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href);
@@ -201,36 +272,45 @@ const DashboardLayout = () => {
                 </button>
               );
             })}
-            {dispatchNav.length > 0 && (
-              <>
-                <div className="mt-4 mb-1 px-3 text-xs uppercase tracking-wider text-[#94A3B8] dark:text-[#71717A]">
-                  {sidebarOpen ? 'Dispatch' : ''}
-                </div>
-                {dispatchNav.map((item) => {
-                  const Icon = item.icon;
-                  const active = isActive(item.href);
-                  return (
-                    <button
-                      key={item.name}
-                      onClick={() => navigate(item.href)}
-                      data-testid={`nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-                        active ? 'bg-[#4F46E5] text-white'
-                          : 'text-[#64748B] dark:text-[#A1A1AA] hover:bg-[#F1F5F9] dark:hover:bg-[#27272A] hover:text-[#0F172A] dark:hover:text-[#FAFAFA]'
-                      }`}
-                    >
-                      <Icon className="w-5 h-5 flex-shrink-0" />
-                      <AnimatePresence>
-                        {sidebarOpen && (
-                          <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-sm font-medium">
-                            {item.name}
-                          </motion.span>
-                        )}
-                      </AnimatePresence>
-                    </button>
-                  );
-                })}
-              </>
+            {activeDispatchNav.map((item) => {
+              const Icon = item.icon;
+              const active = isActive(item.href);
+              return (
+                <button
+                  key={item.name}
+                  onClick={() => navigate(item.href)}
+                  data-testid={`nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+                    active ? 'bg-[#4F46E5] text-white'
+                      : 'text-[#64748B] dark:text-[#A1A1AA] hover:bg-[#F1F5F9] dark:hover:bg-[#27272A] hover:text-[#0F172A] dark:hover:text-[#FAFAFA]'
+                  }`}
+                >
+                  <Icon className="w-5 h-5 flex-shrink-0" />
+                  <AnimatePresence>
+                    {sidebarOpen && (
+                      <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-sm font-medium">
+                        {item.name}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </button>
+              );
+            })}
+            {canDispatch && (
+              <button
+                onClick={switchPortal}
+                data-testid="switch-portal-button"
+                className="mt-3 w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-dashed border-[#4F46E5]/40 text-[#4F46E5] hover:bg-[#4F46E5]/10 transition-colors"
+              >
+                <ArrowLeftRight className="w-5 h-5 flex-shrink-0" />
+                <AnimatePresence>
+                  {sidebarOpen && (
+                    <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-sm font-medium">
+                      {effectivePortal === 'dispatch' ? 'Switch to Employee Portal' : 'Switch to Dispatch Portal'}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </button>
             )}
           </nav>
 
@@ -314,7 +394,7 @@ const DashboardLayout = () => {
             className="lg:hidden fixed inset-y-0 left-0 w-64 bg-white dark:bg-[#18181B] border-r border-[#E2E8F0] dark:border-[#27272A] z-40 pt-16 flex flex-col"
           >
             <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
-              {navigation.map((item) => {
+              {[...navigation, ...activeDispatchNav].map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.href);
                 return (
@@ -336,6 +416,18 @@ const DashboardLayout = () => {
                   </button>
                 );
               })}
+              {canDispatch && (
+                <button
+                  onClick={switchPortal}
+                  data-testid="mobile-switch-portal-button"
+                  className="mt-2 w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-dashed border-[#4F46E5]/40 text-[#4F46E5] hover:bg-[#4F46E5]/10"
+                >
+                  <ArrowLeftRight className="w-5 h-5" />
+                  <span className="text-sm font-medium">
+                    {effectivePortal === 'dispatch' ? 'Switch to Employee Portal' : 'Switch to Dispatch Portal'}
+                  </span>
+                </button>
+              )}
             </nav>
 
             {/* User footer — profile shortcut, settings and Logout for

@@ -198,16 +198,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
   const [limit, setLimit] = useState(50);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState(
-    todayOnly ? (() => {
-      const today = new Date();
-      const yesterday = new Date(today);
-      yesterday.setDate(today.getDate() - 1);
-      return {
-        ...emptyFilters,
-        date_from: yesterday.toISOString().slice(0, 10),
-        date_to: today.toISOString().slice(0, 10),
-      };
-    })() : emptyFilters
+    todayOnly ? { ...emptyFilters, date_from: new Date().toISOString().slice(0, 10), date_to: new Date().toISOString().slice(0, 10) } : emptyFilters
   );
 
   const [clients, setClients] = useState([]);
@@ -215,7 +206,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
   const [officers, setOfficers] = useState([]);
   const [postSites, setPostSites] = useState([]);
   const [siteDialogOpen, setSiteDialogOpen] = useState(false);
-  const emptySiteForm = { post_pin: '', name: '', location: '', city: '', type: 'Unarmed', notes: '' };
+  const emptySiteForm = { post_pin: '', name: '', location: '', city: '', notes: '' };
   const [siteForm, setSiteForm] = useState(emptySiteForm);
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -495,21 +486,10 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
     return () => clearInterval(t);
   }, [load]);
   useEffect(() => {
-    api.get('/dispatch/clients')
-      .then(r => setClients(r.data))
-      .catch(e => console.warn('Dispatch clients failed:', e.response?.status, e.response?.data));
-
-    api.get('/dispatch/vendors')
-      .then(r => setVendors(r.data))
-      .catch(e => console.warn('Dispatch vendors failed:', e.response?.status, e.response?.data));
-
-    api.get('/dispatch/officers')
-      .then(r => setOfficers(r.data))
-      .catch(e => console.warn('Dispatch officers failed:', e.response?.status, e.response?.data));
-
-    api.get('/dispatch/post-sites')
-      .then(r => setPostSites(r.data))
-      .catch(e => console.warn('Dispatch post-sites failed:', e.response?.status, e.response?.data));
+    api.get('/dispatch/clients').then(r => setClients(r.data)).catch(() => {});
+    api.get('/dispatch/vendors').then(r => setVendors(r.data)).catch(() => {});
+    api.get('/dispatch/officers').then(r => setOfficers(r.data)).catch(() => {});
+    api.get('/dispatch/post-sites').then(r => setPostSites(r.data)).catch(() => {});
   }, []);
 
   const openCreate = () => {
@@ -1443,21 +1423,6 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
             <div><Label>Post Site Name *</Label><Input value={siteForm.name} onChange={(e) => setSiteForm({ ...siteForm, name: e.target.value })} data-testid="ps-name" /></div>
             <div><Label>Location *</Label><Input value={siteForm.location} onChange={(e) => setSiteForm({ ...siteForm, location: e.target.value })} data-testid="ps-location" /></div>
             <div><Label>City</Label><Input value={siteForm.city} onChange={(e) => setSiteForm({ ...siteForm, city: e.target.value })} data-testid="ps-city" /></div>
-            <div>
-              <Label>Type</Label>
-              <Select
-                value={siteForm.type || 'Unarmed'}
-                onValueChange={(value) => setSiteForm({ ...siteForm, type: value })}
-              >
-                <SelectTrigger data-testid="ps-type">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Armed">Armed</SelectItem>
-                  <SelectItem value="Unarmed">Unarmed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <div className="col-span-2"><Label>Note</Label><Textarea value={siteForm.notes} onChange={(e) => setSiteForm({ ...siteForm, notes: e.target.value })} data-testid="ps-notes" /></div>
           </div>
           <DialogFooter>
@@ -1760,31 +1725,14 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
               <SearchableSelect
                 value={filters.officer_id || ''}
                 onChange={(v) => setF('officer_id', v)}
-                options={
-                  filters.client_id
-                    ? officers.filter(
-                        (o) =>
-                          o.status === 'active' &&
-                          String(o.client_id) === String(filters.client_id)
-                      )
-                    : officers
-                }
+                options={officers}
                 getLabel={(o) => o.name}
-                getSearch={(o) => `${o.name} ${o.officer_code || ''} ${o.email || ''} ${o.contact_number || ''}`}
-                placeholder={
-                  filters.client_id
-                    ? "All officers for this client"
-                    : "All officers"
-                }
-                searchPlaceholder="Type officer name, code, email or phone…"
-                emptyText={
-                  filters.client_id
-                    ? "No active officers for this client"
-                    : "No officers match"
-                }
+                getSearch={(o) => `${o.name} ${o.email || ''} ${o.contact_number || ''}`}
+                placeholder="All officers"
+                searchPlaceholder="Type officer name…"
+                emptyText="No officers match"
                 testid="filter-officer"
                 allowClear
-                disabled={false}
               />
             </div>
             <div><Label className="text-xs">Vendor</Label>
@@ -1804,38 +1752,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
             <div><Label className="text-xs">Client</Label>
               <SearchableSelect
                 value={filters.client_id || ''}
-                onChange={(v) => {
-                  if (!v) {
-                    setFilters((prev) => ({
-                      ...prev,
-                      client_id: '',
-                      officer_id: '',
-                    }));
-                    setPage(1);
-                    return;
-                  }
-
-                  setFilters((prev) => {
-                    const selectedOfficer = prev.officer_id
-                      ? officers.find(
-                          (o) => String(o.id) === String(prev.officer_id)
-                        )
-                      : null;
-
-                    const officerBelongsToClient =
-                      selectedOfficer &&
-                      String(selectedOfficer.client_id) === String(v);
-
-                    return {
-                      ...prev,
-                      client_id: v,
-                      officer_id: officerBelongsToClient
-                        ? prev.officer_id
-                        : '',
-                    };
-                  });
-                  setPage(1);
-                }}
+                onChange={(v) => setF('client_id', v)}
                 options={clients}
                 getLabel={(c) => c.name}
                 getSearch={(c) => `${c.name} ${c.code || ''}`}

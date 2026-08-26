@@ -20,7 +20,7 @@ DISPATCH_PERMISSIONS = {
     "dispatch.post_sites": ["view", "create", "edit", "delete"],
     "dispatch.confirmation": ["view", "manage", "history"],
     "dispatch.reports": ["view", "export"],
-    "dispatch.financial": ["view"],
+    "dispatch.financial": ["view", "adjust"],
     "dispatch.billing": ["view"],
     "dispatch.audit": ["view"],
 }

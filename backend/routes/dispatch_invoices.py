@@ -8,6 +8,7 @@ Location, Work Order, Actual Hour, Rate, Total Amount) and a footer with
 "Thanks for business with us!".
 """
 import io
+import re
 from datetime import datetime, timezone
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -102,12 +103,23 @@ async def _gather_lines(db, client_id: str, vendor_id: str, date_from: str, date
 
 def _amount_in_words(amount: float) -> str:
     """Convert a USD amount to a natural English 'in-words' string."""
-    n = int(round(amount))
-    cents = int(round((amount - n) * 100))
-    ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
-            "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
-            "Seventeen", "Eighteen", "Nineteen"]
-    tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+    from decimal import Decimal, ROUND_HALF_UP
+
+    value = Decimal(str(amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    n = int(value)
+    cents = int((value - Decimal(n)) * 100)
+
+    ones = [
+        "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+        "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+        "Seventeen", "Eighteen", "Nineteen"
+    ]
+
+    tens = [
+        "", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty",
+        "Seventy", "Eighty", "Ninety"
+    ]
 
     def two(m):
         if m < 20:
@@ -118,26 +130,41 @@ def _amount_in_words(amount: float) -> str:
     def three(m):
         h, r = divmod(m, 100)
         s = ""
+
         if h:
             s += ones[h] + " Hundred"
             if r:
                 s += " & "
+
         if r:
             s += two(r)
+
         return s
 
     if n == 0:
         base = "Zero"
     else:
         parts = []
-        for scale, name in [(1_000_000, "Million"), (1_000, "Thousand"), (1, "")]:
+
+        for scale, name in [
+            (1_000_000, "Million"),
+            (1_000, "Thousand"),
+            (1, "")
+        ]:
             q, n = divmod(n, scale)
+
             if q:
-                parts.append(three(q) + ((" " + name) if name else ""))
+                parts.append(
+                    three(q) + ((" " + name) if name else "")
+                )
+
         base = " ".join(parts)
-    dollars = f"{base} Dollar" + ("s" if int(round(amount)) != 1 else "")
+
+    dollars = f"{base} Dollar" + ("s" if value != 1 else "")
+
     if cents:
         dollars += f" & {two(cents)} Cent" + ("s" if cents != 1 else "")
+
     return dollars + "."
 
 
@@ -289,18 +316,138 @@ async def create_invoice(payload: DispatchInvoiceCreate, request: Request, db=De
     return _doc_out(doc)
 
 
+@router.put("/{inv_id}")
+async def update_invoice(inv_id: str, payload: DispatchInvoiceCreate, request: Request, db=Depends(get_db)):
+    """Update an existing invoice (details + line items) and recompute totals."""
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.reports.export")
+    financial = has_permission(user, "dispatch.financial.view")
+    if not financial:
+        raise HTTPException(403, "Financial permission required to edit invoices")
+
+    existing = await db.dispatch_invoices.find_one({"_id": _oid(inv_id)})
+    if not existing:
+        raise HTTPException(404, "Invoice not found")
+
+    dup = await db.dispatch_invoices.find_one({
+        "invoice_number": payload.invoice_number,
+        "_id": {"$ne": _oid(inv_id)},
+    })
+    if dup:
+        raise HTTPException(400, f"Invoice #{payload.invoice_number} already exists")
+
+    site_ids = _payload_site_ids(payload)
+    ctx = await _build_invoice_context(
+        db, payload.client_id, payload.vendor_id,
+        payload.billing_period_from, payload.billing_period_to, financial, site_ids,
+        override_lines=payload.lines,
+    )
+    update = {
+        "invoice_number": payload.invoice_number,
+        "invoice_date": payload.invoice_date,
+        "billing_period_from": payload.billing_period_from,
+        "billing_period_to": payload.billing_period_to,
+        "client_id": payload.client_id,
+        "vendor_id": payload.vendor_id,
+        "post_site_id": payload.post_site_id,
+        "post_site_ids": site_ids,
+        "client_snapshot": ctx["client"],
+        "vendor_snapshot": ctx["vendor"],
+        "lines": ctx["lines"],
+        "total_hours": ctx["total_hours"],
+        "total_amount": ctx["total_amount"],
+        "amount_in_words": ctx["amount_in_words"],
+        "schedule_ids": [ln["schedule_id"] for ln in ctx["lines"] if ln.get("schedule_id")],
+        "notes": payload.notes,
+        "updated_at": _now(),
+        "updated_by_id": str(user["_id"]),
+        "updated_by_name": user.get("name"),
+    }
+    await db.dispatch_invoices.update_one({"_id": _oid(inv_id)}, {"$set": update})
+    doc = await db.dispatch_invoices.find_one({"_id": _oid(inv_id)})
+    return _doc_out(doc)
+
+
 @router.get("")
-async def list_invoices(request: Request, db=Depends(get_db),
-                        client_id: str = None, vendor_id: str = None,
-                        skip: int = 0, limit: int = 50):
+async def list_invoices(
+    request: Request,
+    db=Depends(get_db),
+    client_id: str = None,
+    vendor_id: str = None,
+    post_site_id: str = None,
+    date_from: str = None,
+    date_to: str = None,
+    invoice_number: str = None,
+    skip: int = 0,
+    limit: int = 50,
+):
+    """List saved invoices with server-side filters.
+
+    Supported filters:
+      - client_id
+      - vendor_id
+      - post_site_id
+      - date_from / date_to: invoice_date range
+      - invoice_number: case-insensitive partial AJAX search
+    """
     user = await get_current_user(request, db)
     require_permission(user, "dispatch.reports.view")
+
     q = {}
-    if client_id: q["client_id"] = client_id
-    if vendor_id: q["vendor_id"] = vendor_id
+
+    if client_id:
+        q["client_id"] = client_id
+
+    if vendor_id:
+        q["vendor_id"] = vendor_id
+
+    if post_site_id:
+        # post_site_ids is the canonical field on newer invoices.
+        # The $or also supports older invoices that only have post_site_id.
+        q["$or"] = [
+            {"post_site_ids": post_site_id},
+            {"post_site_id": post_site_id},
+        ]
+
+    if date_from or date_to:
+        date_query = {}
+        if date_from:
+            date_query["$gte"] = date_from
+        if date_to:
+            date_query["$lte"] = date_to
+        q["invoice_date"] = date_query
+
+    if invoice_number:
+        # Escape user input so it is treated as plain search text.
+        # Case-insensitive partial matching gives AJAX-style searching.
+        q["invoice_number"] = {
+            "$regex": re.escape(invoice_number.strip()),
+            "$options": "i",
+        }
+
     total = await db.dispatch_invoices.count_documents(q)
-    docs = await db.dispatch_invoices.find(q).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
-    return {"items": [_doc_out(d) for d in docs], "total": total}
+
+    docs = await (
+        db.dispatch_invoices
+        .find(q)
+        .sort("invoice_date", -1)
+        .skip(max(skip, 0))
+        .limit(min(max(limit, 1), 200))
+        .to_list(min(max(limit, 1), 200))
+    )
+
+    return {
+        "items": [_doc_out(d) for d in docs],
+        "total": total,
+        "filters": {
+            "client_id": client_id,
+            "vendor_id": vendor_id,
+            "post_site_id": post_site_id,
+            "date_from": date_from,
+            "date_to": date_to,
+            "invoice_number": invoice_number,
+        },
+    }
 
 
 @router.get("/locations")
@@ -379,7 +526,7 @@ async def get_invoice(inv_id: str, request: Request, db=Depends(get_db)):
 
 
 @router.get("/{inv_id}/pdf")
-async def download_invoice_pdf(inv_id: str, request: Request, db=Depends(get_db)):
+async def download_invoice_pdf(inv_id: str, request: Request, db=Depends(get_db), inline: bool = False):
     user = await get_current_user(request, db)
     require_permission(user, "dispatch.reports.view")
     doc = await db.dispatch_invoices.find_one({"_id": _oid(inv_id)})
@@ -400,8 +547,9 @@ async def download_invoice_pdf(inv_id: str, request: Request, db=Depends(get_db)
         amount_in_words=doc["amount_in_words"],
         accent_color=client_snap.get("accent_color"),
     )
+    disp = "inline" if inline else "attachment"
     return StreamingResponse(io.BytesIO(pdf), media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="Invoice-{doc["invoice_number"]}.pdf"'})
+        headers={"Content-Disposition": f'{disp}; filename="Invoice-{doc["invoice_number"]}.pdf"'})
 
 
 @router.post("/preview/pdf")

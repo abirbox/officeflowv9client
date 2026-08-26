@@ -19,7 +19,7 @@ import { STATUS_BADGE } from './_shared';
  *   props.columns — [{key,label}]
  *   props.statuses — [{value,label}]  optional; default active/inactive
  */
-const EntityCrudPage = ({ title, endpoint, permBase, fields, columns, statuses }) => {
+const EntityCrudPage = ({ title, endpoint, permBase, fields, columns, statuses, filters = [] }) => {
   const { user } = useAuthStore();
   const canCreate = hasPermission(user, `${permBase}.create`);
   const canEdit = hasPermission(user, `${permBase}.edit`);
@@ -27,6 +27,7 @@ const EntityCrudPage = ({ title, endpoint, permBase, fields, columns, statuses }
 
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState('');
+  const [filterValues, setFilterValues] = useState({});
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -52,7 +53,12 @@ const EntityCrudPage = ({ title, endpoint, permBase, fields, columns, statuses }
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get(endpoint, { params: { search } });
+      const params = { search, ...filterValues };
+      Object.keys(params).forEach((key) => {
+        if (params[key] === '' || params[key] == null) delete params[key];
+      });
+
+      const { data } = await api.get(endpoint, { params });
       setRows(Array.isArray(data) ? data : (data.items || []));
     } catch (e) {
       toast.error(formatApiErrorDetail(e.response?.data?.detail));
@@ -63,9 +69,9 @@ const EntityCrudPage = ({ title, endpoint, permBase, fields, columns, statuses }
     if (fields.some((f) => f.select === 'clients')) api.get('/dispatch/clients').then(r => setClients(r.data));
     if (fields.some((f) => f.select === 'vendors')) api.get('/dispatch/vendors').then(r => setVendors(r.data));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [search, JSON.stringify(filterValues)]);
 
-  const openCreate = () => { setEditing(null); setForm({ status: 'active' }); setDialogOpen(true); };
+  const openCreate = () => { setEditing(null); setForm({ status: 'active', type: 'Unarmed' }); setDialogOpen(true); };
   const openEdit = (row) => { setEditing(row); setForm({ ...row }); setDialogOpen(true); };
 
   const submit = async () => {
@@ -144,7 +150,21 @@ const EntityCrudPage = ({ title, endpoint, permBase, fields, columns, statuses }
     }
     if (f.type === 'textarea')
       return <Textarea value={form[f.key] || ''} onChange={(e) => setForm({ ...form, [f.key]: e.target.value })} data-testid={`field-${f.key}`} />;
-    return <Input type={f.type || 'text'} value={form[f.key] ?? ''} onChange={(e) => setForm({ ...form, [f.key]: f.type === 'number' ? Number(e.target.value) : e.target.value })} data-testid={`field-${f.key}`} />;
+    return (
+      <Input
+        type={f.type || 'text'}
+        value={form[f.key] ?? ''}
+        readOnly={f.readOnly}
+        disabled={f.disabled}
+        placeholder={f.readOnly ? 'Automatically generated' : undefined}
+        onChange={(e) => setForm({
+          ...form,
+          [f.key]: f.type === 'number' ? Number(e.target.value) : e.target.value
+        })}
+        className={f.readOnly ? 'bg-[#F8FAFC] dark:bg-[#27272A] cursor-not-allowed' : ''}
+        data-testid={`field-${f.key}`}
+      />
+    );
   };
 
   return (
@@ -158,11 +178,59 @@ const EntityCrudPage = ({ title, endpoint, permBase, fields, columns, statuses }
         )}
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-md">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[240px] max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748B]" />
-          <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" data-testid="search-input" />
+          <Input
+            placeholder="Search..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10"
+            data-testid="search-input"
+          />
         </div>
+
+        {filters.map((filter) => (
+          <Select
+            key={filter.key}
+            value={filterValues[filter.key] || 'all'}
+            onValueChange={(value) =>
+              setFilterValues((prev) => ({
+                ...prev,
+                [filter.key]: value === 'all' ? '' : value
+              }))
+            }
+          >
+            <SelectTrigger className="w-[190px]" data-testid={`filter-${filter.key}`}>
+              <SelectValue placeholder={filter.label} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All {filter.label}</SelectItem>
+
+              {filter.type === 'clients'
+                ? clients.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))
+                : filter.options?.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+            </SelectContent>
+          </Select>
+        ))}
+
+        {filters.length > 0 && Object.values(filterValues).some(Boolean) && (
+          <Button
+            variant="outline"
+            onClick={() => setFilterValues({})}
+            data-testid="clear-filters"
+          >
+            Clear Filters
+          </Button>
+        )}
       </div>
 
       <div className="bg-white dark:bg-[#18181B] border border-[#E2E8F0] dark:border-[#27272A] rounded-xl overflow-x-auto">

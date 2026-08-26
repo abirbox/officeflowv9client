@@ -198,16 +198,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
   const [limit, setLimit] = useState(50);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState(
-    todayOnly ? (() => {
-      const today = new Date();
-      const yesterday = new Date(today);
-      yesterday.setDate(today.getDate() - 1);
-      return {
-        ...emptyFilters,
-        date_from: yesterday.toISOString().slice(0, 10),
-        date_to: today.toISOString().slice(0, 10),
-      };
-    })() : emptyFilters
+    todayOnly ? { ...emptyFilters, date_from: new Date().toISOString().slice(0, 10), date_to: new Date().toISOString().slice(0, 10) } : emptyFilters
   );
 
   const [clients, setClients] = useState([]);

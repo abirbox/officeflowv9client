@@ -48,7 +48,6 @@ export const OfficersPage = () => (
       { key: 'officer_code', label: 'Officer Code' },
       { key: 'name', label: 'Officer Name' },
       { key: 'client_name', label: 'Client' },
-      { key: 'social_security_code', label: 'Social Security Code' },
       { key: 'type', label: 'Type' },
       { key: 'contact_number', label: 'Phone' },
       { key: 'email', label: 'Email' },
@@ -80,7 +79,6 @@ export const OfficersPage = () => (
       { key: 'officer_code', label: 'Officer Code', readOnly: true },
       { key: 'contact_number', label: 'Contact Number', required: true },
       { key: 'alternate_contact_number', label: 'Alternate Number' },
-      { key: 'social_security_code', label: 'Social Security Code' },
       { key: 'email', label: 'Email' },
       { key: 'client_id', label: 'Client', select: 'clients', required: true },
       {
@@ -108,23 +106,10 @@ export const OfficersPage = () => (
 export const PostSitesPage = () => (
   <EntityCrudPage
     title="Post Sites" endpoint="/dispatch/post-sites" permBase="dispatch.post_sites"
-    columns={[
-      { key: 'post_pin', label: 'Post Pin' },
-      { key: 'name', label: 'Name' },
-      { key: 'type', label: 'Type' },
-      { key: 'city', label: 'City' }
-    ]}
+    columns={[{ key: 'post_pin', label: 'Post Pin' }, { key: 'name', label: 'Name' }, { key: 'city', label: 'City' }]}
     fields={[
       { key: 'post_pin', label: 'Post Site Pin', required: true },
       { key: 'name', label: 'Post Site Name', required: true },
-      {
-        key: 'type',
-        label: 'Type',
-        options: [
-          { value: 'Armed', label: 'Armed' },
-          { value: 'Unarmed', label: 'Unarmed' }
-        ]
-      },
       { key: 'location', label: 'Address' },
       { key: 'city', label: 'City' },
       { key: 'notes', label: 'Note', type: 'textarea' },

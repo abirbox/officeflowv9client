@@ -1,7 +1,9 @@
 """Dispatch module routes — Clients, Vendors, Officers, Post Sites, Schedule + Confirmation."""
 from fastapi import APIRouter, HTTPException, Request, Depends, Query, UploadFile
+import random
 from fastapi.responses import StreamingResponse
 from datetime import datetime, timezone, date, timedelta
+from typing import Optional
 from bson import ObjectId
 import io
 import uuid
@@ -13,6 +15,8 @@ from models.dispatch import (
     PostSiteCreate, PostSiteUpdate,
     ScheduleCreate, ScheduleUpdate, ConfirmationUpdate, ShiftStatusUpdate,
     SHIFT_TYPES, SHIFT_STATUSES, COMPLETED_STATUSES, CONFIRMATION_STATUSES, CONFIRMATION_METHODS,
+    OFFICER_TYPES,
+    PayslipRecordCreate,
 )
 from utils.auth import get_current_user
 from utils.permissions import (
@@ -20,6 +24,12 @@ from utils.permissions import (
     ALL_PERMISSIONS, FINANCIAL_FIELDS,
 )
 from utils.dispatch_reports import build_csv, build_pdf, build_xlsx
+
+# Temporary scheduling placeholders.
+# These are stored directly in officer_id and do not require
+# a corresponding dispatch_officers MongoDB document.
+SPECIAL_OFFICERS = {"TEMP", "OPEN_SHIFT"}
+UMA_TIME = "UMA"
 from utils.storage import to_public_url
 from utils.ws import manager
 
@@ -83,13 +93,22 @@ def _oid(x: str):
 def _doc_out(doc: dict) -> dict:
     if not doc:
         return doc
+
     d = dict(doc)
     d["id"] = str(d.pop("_id"))
+
     for k, v in list(d.items()):
         if isinstance(v, datetime):
+            # MongoDB returns UTC datetimes as naive datetime objects.
+            # Explicitly mark them as UTC before sending to the frontend.
+            if v.tzinfo is None:
+                v = v.replace(tzinfo=timezone.utc)
+
             d[k] = v.isoformat()
+
         elif isinstance(v, ObjectId):
             d[k] = str(v)
+
     return d
 
 
@@ -105,12 +124,21 @@ def _parse_hhmm(s: str) -> int:
         raise HTTPException(status_code=400, detail=f"Invalid time '{s}', expected HH:MM")
 
 
-def _duty_hours(start: str, end: str) -> float:
-    """Compute duty hours, handling overnight."""
+def _duty_hours(start: str, end: str) -> Optional[float]:
+    """Compute duty hours, handling overnight.
+
+    UMA means the time is not decided yet, so duty hours cannot
+    be calculated until the actual time is assigned.
+    """
+    if start == UMA_TIME or end == UMA_TIME:
+        return None
+
     s = _parse_hhmm(start)
     e = _parse_hhmm(end)
+
     if e <= s:  # overnight (e.g. 22:00 → 06:00)
         e += 24 * 60
+
     return round((e - s) / 60.0, 2)
 
 
@@ -255,15 +283,69 @@ async def delete_vendor(vid: str, request: Request, db=Depends(get_db)):
 # =====================================================================
 #  SECURITY OFFICERS  (NO GPS — external persons)
 # =====================================================================
+
+async def _generate_officer_code(db, client_code: str, exclude_id=None):
+    """
+    Generate a unique Security Officer Code:
+        CLIENTCODE + 6 digits
+
+    Example:
+        ARS012345
+    """
+    client_code = str(client_code or "").strip()
+
+    if not client_code:
+        raise HTTPException(400, "Client Code is required")
+
+    query = {}
+
+    for _ in range(100):
+        number = random.randint(0, 999999)
+        code = f"{client_code}{number:06d}"
+
+        query["officer_code"] = code
+
+        if exclude_id is not None:
+            query["_id"] = {"$ne": exclude_id}
+
+        existing = await db.dispatch_officers.find_one(query)
+
+        if not existing:
+            return code
+
+    raise HTTPException(
+        500,
+        "Unable to generate a unique Officer Code"
+    )
+
 @router.post("/officers")
 async def create_officer(payload: OfficerCreate, request: Request, db=Depends(get_db)):
     user = await get_current_user(request, db)
     require_permission(user, "dispatch.officers.create")
+
     if payload.status not in OFFICER_STATUSES:
         raise HTTPException(400, "Invalid officer status")
+
+    if payload.type not in OFFICER_TYPES:
+        raise HTTPException(400, f"Invalid officer type. Allowed values: {', '.join(OFFICER_TYPES)}")
+
+    # Client is required and Officer Code always comes from the Client code.
+    client = await db.dispatch_clients.find_one({"_id": _oid(payload.client_id)})
+    if not client:
+        raise HTTPException(400, "Selected client not found")
+
+    client_code = str(client.get("code") or "").strip()
+    if not client_code:
+        raise HTTPException(400, "Selected client does not have a Client Code")
+
     doc = payload.model_dump()
-    doc["created_by"] = str(user["_id"]); doc["created_at"] = _now()
-    doc["updated_by"] = str(user["_id"]); doc["updated_at"] = _now()
+    doc["client_id"] = str(client["_id"])
+    doc["officer_code"] = await _generate_officer_code(db, client_code)
+    doc["created_by"] = str(user["_id"])
+    doc["created_at"] = _now()
+    doc["updated_by"] = str(user["_id"])
+    doc["updated_at"] = _now()
+
     res = await db.dispatch_officers.insert_one(doc)
     await _audit(db, user, "create", "officer", res.inserted_id, doc.get("name"))
     return _doc_out(await db.dispatch_officers.find_one({"_id": res.inserted_id}))
@@ -271,19 +353,60 @@ async def create_officer(payload: OfficerCreate, request: Request, db=Depends(ge
 
 @router.get("/officers")
 async def list_officers(request: Request, db=Depends(get_db), search: str = "",
-                        client_id: str = None, status: str = None,
+                        client_id: str = None, type: str = None, status: str = None,
                         skip: int = 0, limit: int = 200):
     user = await get_current_user(request, db)
     require_permission(user, "dispatch.officers.view")
     q = {}
     if status: q["status"] = status
     if client_id: q["client_id"] = client_id
+    if type:
+        if type not in OFFICER_TYPES:
+            raise HTTPException(
+                400,
+                f"Invalid officer type. Allowed values: {', '.join(OFFICER_TYPES)}"
+            )
+        q["type"] = type
     if search:
         q["$or"] = [{"name": {"$regex": search, "$options": "i"}},
                     {"contact_number": {"$regex": search, "$options": "i"}},
                     {"officer_code": {"$regex": search, "$options": "i"}}]
     docs = await db.dispatch_officers.find(q).skip(skip).limit(limit).to_list(limit)
-    return [_doc_out(d) for d in docs]
+
+    # Attach Client name/code for the Security Officer table.
+    client_ids = []
+    for d in docs:
+        cid = d.get("client_id")
+        if cid:
+            try:
+                client_ids.append(ObjectId(str(cid)))
+            except Exception:
+                pass
+
+    client_map = {}
+    if client_ids:
+        client_docs = await db.dispatch_clients.find(
+            {"_id": {"$in": client_ids}},
+            {"name": 1, "code": 1}
+        ).to_list(len(client_ids))
+
+        client_map = {
+            str(c["_id"]): c
+            for c in client_docs
+        }
+
+    output = []
+    for d in docs:
+        row = _doc_out(d)
+        cid = d.get("client_id")
+        client = client_map.get(str(cid)) if cid else None
+
+        row["client_name"] = client.get("name") if client else None
+        row["client_code"] = client.get("code") if client else None
+
+        output.append(row)
+
+    return output
 
 
 @router.get("/officers/{oid}")
@@ -299,15 +422,76 @@ async def get_officer(oid: str, request: Request, db=Depends(get_db)):
 async def update_officer(oid: str, payload: OfficerUpdate, request: Request, db=Depends(get_db)):
     user = await get_current_user(request, db)
     require_permission(user, "dispatch.officers.edit")
+
+    existing = await db.dispatch_officers.find_one({"_id": _oid(oid)})
+    if not existing:
+        raise HTTPException(404, "Officer not found")
+
     upd = {k: v for k, v in payload.model_dump().items() if v is not None}
+
     if "status" in upd and upd["status"] not in OFFICER_STATUSES:
         raise HTTPException(400, "Invalid officer status")
-    upd["updated_by"] = str(user["_id"]); upd["updated_at"] = _now()
-    r = await db.dispatch_officers.update_one({"_id": _oid(oid)}, {"$set": upd})
-    if r.matched_count == 0: raise HTTPException(404, "Officer not found")
+
+    if "type" in upd and upd["type"] not in OFFICER_TYPES:
+        raise HTTPException(
+            400,
+            f"Invalid officer type. Allowed values: {', '.join(OFFICER_TYPES)}"
+        )
+
+    # If the Client changes, regenerate the Officer Code from the new Client.
+    # Also repair the code automatically when editing an existing officer.
+    client_id = upd.get("client_id") or existing.get("client_id")
+
+    if not client_id:
+        raise HTTPException(400, "Security Officer must have a Client")
+
+    client = await db.dispatch_clients.find_one({"_id": _oid(client_id)})
+    if not client:
+        raise HTTPException(400, "Selected client not found")
+
+    client_code = str(client.get("code") or "").strip()
+    if not client_code:
+        raise HTTPException(400, "Selected client does not have a Client Code")
+
+    upd["client_id"] = str(client["_id"])
+
+    # Generate a new Officer Code only when the Client changes.
+    # Otherwise preserve the existing Officer Code.
+    if str(existing.get("client_id") or "") != str(client["_id"]):
+        upd["officer_code"] = await _generate_officer_code(
+            db,
+            client_code,
+            exclude_id=existing["_id"]
+        )
+    else:
+        upd["officer_code"] = existing.get("officer_code")
+
+    upd["updated_by"] = str(user["_id"])
+    upd["updated_at"] = _now()
+
+    r = await db.dispatch_officers.update_one(
+        {"_id": _oid(oid)},
+        {"$set": upd}
+    )
+
+    if r.matched_count == 0:
+        raise HTTPException(404, "Officer not found")
+
     saved = await db.dispatch_officers.find_one({"_id": _oid(oid)})
-    await _audit(db, user, "update", "officer", oid, saved.get("name"),
-                 changes={k: v for k, v in upd.items() if k not in ("updated_by", "updated_at")})
+
+    await _audit(
+        db,
+        user,
+        "update",
+        "officer",
+        oid,
+        saved.get("name"),
+        changes={
+            k: v for k, v in upd.items()
+            if k not in ("updated_by", "updated_at")
+        }
+    )
+
     return _doc_out(saved)
 
 
@@ -423,6 +607,15 @@ async def _check_conflict(db, officer_id: str, sched_date: str,
     return None
 
 
+def _merge_remark(existing, new_remark):
+    """Append a remark line to the combined remarks store (dedup, newline-joined)."""
+    lines = [x.strip() for x in str(existing or "").split("\n") if x.strip()]
+    nl = str(new_remark or "").strip()
+    if nl and nl not in lines:
+        lines.append(nl)
+    return "\n".join(lines)
+
+
 async def _log_action(db, schedule_id: str, actor: dict, action: str,
                       old_value=None, new_value=None, remarks: str = None):
     """Append to dispatch_action_history and update last_modified_* on schedule."""
@@ -501,93 +694,223 @@ async def _notify_dispatch(db, actor, title, message, link, event):
 async def create_schedule(payload: ScheduleCreate, request: Request, db=Depends(get_db)):
     user = await get_current_user(request, db)
     require_permission(user, "dispatch.schedule.create")
+
     if payload.shift_type not in SHIFT_TYPES:
         raise HTTPException(400, f"Shift type must be one of {SHIFT_TYPES}")
 
-    # Financial fields require perm
+    # Determine creation mode. Existing clients that do not send schedule_mode
+    # automatically remain in the original single-date behavior.
+    mode = (payload.schedule_mode or "once").strip().lower()
+    if mode not in ("once", "multiple"):
+        raise HTTPException(400, "Schedule mode must be either 'once' or 'multiple'.")
+
+    # Build the list of dates to create.
+    if mode == "once":
+        if not payload.date:
+            raise HTTPException(422, "Date is required.")
+
+        dates = [payload.date]
+
+    else:
+        if not payload.date_from:
+            raise HTTPException(422, "From date is required.")
+        if not payload.date_to:
+            raise HTTPException(422, "To date is required.")
+
+        try:
+            from datetime import date as _date, timedelta as _timedelta
+
+            start_date = _date.fromisoformat(payload.date_from)
+            end_date = _date.fromisoformat(payload.date_to)
+        except ValueError:
+            raise HTTPException(422, "From date and To date must be valid dates in YYYY-MM-DD format.")
+
+        if end_date < start_date:
+            raise HTTPException(422, "To date cannot be earlier than From date.")
+
+        # Safety limit prevents accidental extremely large submissions.
+        total_days = (end_date - start_date).days + 1
+        if total_days > 366:
+            raise HTTPException(422, "Multiple schedule range cannot exceed 366 days.")
+
+        dates = [
+            (start_date + _timedelta(days=i)).isoformat()
+            for i in range(total_days)
+        ]
+
+    # Financial fields require permission.
     financial_write = has_permission(user, "dispatch.financial.view")
-    if not financial_write and (payload.duty_rate is not None or
-                                payload.billing_rate is not None or
-                                payload.work_order_number is not None):
+    if not financial_write and (
+        payload.duty_rate is not None
+        or payload.billing_rate is not None
+        or payload.work_order_number is not None
+    ):
         raise HTTPException(403, "You do not have permission to set financial fields.")
 
-    # Verify references exist
+    # Verify references exist once before creating the schedules.
     client = await db.dispatch_clients.find_one({"_id": _oid(payload.client_id)})
-    if not client: raise HTTPException(400, "Invalid client")
-    vendor = await db.dispatch_vendors.find_one({"_id": _oid(payload.vendor_id)})
-    if not vendor: raise HTTPException(400, "Invalid vendor")
-    post = await db.dispatch_post_sites.find_one({"_id": _oid(payload.post_site_id)})
-    if not post: raise HTTPException(400, "Invalid post site")
-    officer = await db.dispatch_officers.find_one({"_id": _oid(payload.officer_id)})
-    if not officer: raise HTTPException(400, "Invalid officer")
-    if officer.get("status") != "active":
-        raise HTTPException(400, "Security Officer is not active.")
+    if not client:
+        raise HTTPException(400, "Invalid client")
 
-    # Conflict detection
-    conflict = await _check_conflict(db, payload.officer_id, payload.date,
-                                     payload.start_time, payload.end_time)
-    if conflict:
-        raise HTTPException(409,
-            f"Security Officer already has another shift on {conflict['date']} "
-            f"{conflict['start_time']}–{conflict['end_time']}.")
+    vendor = await db.dispatch_vendors.find_one({"_id": _oid(payload.vendor_id)})
+    if not vendor:
+        raise HTTPException(400, "Invalid vendor")
+
+    post = await db.dispatch_post_sites.find_one({"_id": _oid(payload.post_site_id)})
+    if not post:
+        raise HTTPException(400, "Invalid post site")
+
+    # TEMP / Open Shift are intentional placeholders.
+    # They do not require a real Security Officer record yet.
+    if payload.officer_id not in SPECIAL_OFFICERS:
+        officer = await db.dispatch_officers.find_one({
+            "_id": _oid(payload.officer_id)
+        })
+
+        if not officer:
+            raise HTTPException(400, "Invalid officer")
+
+        if officer.get("status") != "active":
+            raise HTTPException(400, "Security Officer is not active.")
+
+        # A real Security Officer must belong to the selected Client.
+        if str(officer.get("client_id") or "") != str(client["_id"]):
+            raise HTTPException(
+                400,
+                "Selected Security Officer does not belong to the selected Client."
+            )
+
+    # Validate ALL dates before inserting anything.
+    # This prevents a multiple-date submission from being partially created.
+    conflicts = []
+
+    # Conflict checking only makes sense when we have:
+    # 1. a real Security Officer
+    # 2. actual start/end times
+    #
+    # TEMP / Open Shift and UMA are placeholders and therefore
+    # intentionally skip conflict checking.
+    can_check_conflict = (
+        payload.officer_id not in SPECIAL_OFFICERS
+        and payload.start_time != UMA_TIME
+        and payload.end_time != UMA_TIME
+    )
+
+    if can_check_conflict:
+        for sched_date in dates:
+            conflict = await _check_conflict(
+                db,
+                payload.officer_id,
+                sched_date,
+                payload.start_time,
+                payload.end_time,
+            )
+
+            if conflict:
+                conflicts.append(
+                    f"{conflict['date']} {conflict['start_time']}–{conflict['end_time']}"
+                )
+
+    # Also detect conflicts within the new date range itself.
+    # This is mostly defensive because each generated schedule uses a
+    # different date, but keeps the validation explicit.
+    if conflicts:
+        if len(conflicts) == 1:
+            message = f"Security Officer already has another shift on {conflicts[0]}."
+        else:
+            message = (
+                "Security Officer already has conflicting shifts on: "
+                + ", ".join(conflicts)
+                + "."
+            )
+        raise HTTPException(409, message)
 
     hours = _duty_hours(payload.start_time, payload.end_time)
-    doc = payload.model_dump()
-    doc["duty_hours"] = hours
-    doc["shift_status"] = "Not Started"
-    doc["confirmation_status"] = "Not Confirmed"
-    doc["confirmation_method"] = None
-    doc["confirmed_by_id"] = None
-    doc["confirmed_by_name"] = None
-    doc["confirmed_at"] = None
-    doc["actual_check_in"] = None
-    doc["actual_check_out"] = None
-    doc["actual_duty_hours"] = None
-    doc["late_minutes"] = 0
-    doc["early_minutes"] = 0
-    doc["overtime_minutes"] = 0
-    doc["created_by"] = str(user["_id"]); doc["created_at"] = _now()
-    doc["updated_by"] = str(user["_id"]); doc["updated_at"] = _now()
-    doc["last_modified_by_id"] = str(user["_id"])
-    doc["last_modified_by_name"] = user.get("name")
-    doc["last_modified_action"] = "Created"
-    doc["last_modified_at"] = _now()
-    if doc.get("remarks"):
-        doc["last_modified_remarks"] = doc.get("remarks")
-    res = await db.dispatch_schedules.insert_one(doc)
-    await db.dispatch_action_history.insert_one({
-        "schedule_id": str(res.inserted_id),
-        "action": "Created",
-        "old_value": None,
-        "new_value": doc.get("shift_status"),
-        "remarks": None,
-        "actor_id": str(user["_id"]),
-        "actor_name": user.get("name"),
-        "actor_role": user.get("role"),
-        "at": _now(),
-    })
-    saved = await db.dispatch_schedules.find_one({"_id": res.inserted_id})
-    await _audit(db, user, "create", "schedule", res.inserted_id,
-                 f"{doc.get('date')} {doc.get('shift_type')} · {doc.get('start_time')}–{doc.get('end_time')}")
-    return strip_financial(_doc_out(saved), user)
+    now = _now()
 
+    created_ids = []
 
-@router.get("/schedules/import-template")
-async def schedule_import_template(request: Request, db=Depends(get_db)):
-    """Return a small CSV template so users know the required columns."""
-    user = await get_current_user(request, db)
-    require_permission(user, "dispatch.schedule.create")
-    template = (
-        "date,shift_type,start_time,end_time,officer_name,post_pin,"
-        "work_order_number,client_name,vendor_name,duty_rate,billing_rate,remarks\n"
-        "2026-03-01,Morning,09:00,17:00,John Doe,PS-101,,,,20,32,\n"
-        "2026-03-01,Evening,17:00,23:00,Jane Roe,PS-102,WO-002,,,22,34,Bring radio\n"
-    )
-    return StreamingResponse(
-        io.BytesIO(template.encode("utf-8")),
-        media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="dispatch-schedule-template.csv"'},
-    )
+    for sched_date in dates:
+        doc = payload.model_dump()
+
+        # These are request-control fields, not schedule database fields.
+        doc.pop("schedule_mode", None)
+        doc.pop("date_from", None)
+        doc.pop("date_to", None)
+
+        doc["date"] = sched_date
+        doc["duty_hours"] = hours
+        doc["shift_status"] = "Not Started"
+        doc["confirmation_status"] = "Not Confirmed"
+        doc["confirmation_method"] = None
+        doc["confirmed_by_id"] = None
+        doc["confirmed_by_name"] = None
+        doc["confirmed_at"] = None
+        doc["actual_check_in"] = None
+        doc["actual_check_out"] = None
+        doc["actual_duty_hours"] = None
+        doc["late_minutes"] = 0
+        doc["early_minutes"] = 0
+        doc["overtime_minutes"] = 0
+        doc["created_by"] = str(user["_id"])
+        doc["created_at"] = now
+        doc["updated_by"] = str(user["_id"])
+        doc["updated_at"] = now
+        doc["last_modified_by_id"] = str(user["_id"])
+        doc["last_modified_by_name"] = user.get("name")
+        doc["last_modified_action"] = "Created"
+        doc["last_modified_at"] = now
+
+        if doc.get("remarks"):
+            doc["last_modified_remarks"] = doc.get("remarks")
+
+        res = await db.dispatch_schedules.insert_one(doc)
+        created_ids.append(str(res.inserted_id))
+
+        await db.dispatch_action_history.insert_one({
+            "schedule_id": str(res.inserted_id),
+            "action": "Created",
+            "old_value": None,
+            "new_value": doc.get("shift_status"),
+            "remarks": None,
+            "actor_id": str(user["_id"]),
+            "actor_name": user.get("name"),
+            "actor_role": user.get("role"),
+            "at": now,
+        })
+
+        await _audit(
+            db,
+            user,
+            "create",
+            "schedule",
+            res.inserted_id,
+            f"{doc.get('date')} {doc.get('shift_type')} · "
+            f"{doc.get('start_time')}–{doc.get('end_time')}",
+        )
+
+    # Return the same style of response for a single schedule, while
+    # providing a useful summary for multiple-date creation.
+    if mode == "once":
+        saved = await db.dispatch_schedules.find_one(
+            {"_id": _oid(created_ids[0])}
+        )
+        return strip_financial(_doc_out(saved), user)
+
+    saved_docs = await db.dispatch_schedules.find(
+        {"_id": {"$in": [_oid(x) for x in created_ids]}}
+    ).sort([("date", 1), ("start_time", 1)]).to_list(len(created_ids))
+
+    return {
+        "message": f"{len(created_ids)} schedules created",
+        "created": len(created_ids),
+        "date_from": dates[0],
+        "date_to": dates[-1],
+        "items": [
+            strip_financial(_doc_out(doc), user)
+            for doc in saved_docs
+        ],
+    }
 
 
 @router.post("/schedules/import")
@@ -870,7 +1193,7 @@ async def list_schedules(request: Request, db=Depends(get_db),
         q["post_site_id"] = {"$in": pids} if pids else "__none__"
 
     total = await db.dispatch_schedules.count_documents(q)
-    docs = await db.dispatch_schedules.find(q).sort([("date", -1), ("start_time", -1)]) \
+    docs = await db.dispatch_schedules.find(q).sort([("date", 1), ("start_time", 1)]) \
         .skip((page - 1) * limit).limit(limit).to_list(limit)
 
     # Enrich with names + strip financial
@@ -882,7 +1205,7 @@ async def list_schedules(request: Request, db=Depends(get_db),
         k = _cache_key(coll, _id)
         if k in cache: return cache[k]
         try:
-            d = await db[coll].find_one({"_id": _oid(_id)}, {field: 1, "code": 1, "post_pin": 1, "city": 1})
+            d = await db[coll].find_one({"_id": _oid(_id)}, {field: 1, "code": 1, "post_pin": 1, "city": 1, "location": 1})
         except Exception:
             d = None
         cache[k] = d
@@ -900,6 +1223,9 @@ async def list_schedules(request: Request, db=Depends(get_db),
         row["vendor_code"] = ven.get("code") if ven else None
         row["officer_name"] = off.get("name") if off else None
         row["post_site_name"] = pst.get("name") if pst else None
+        row["location"] = pst.get("location") if pst else None
+        row["address"] = pst.get("location") if pst else None
+        row["post_site_location"] = pst.get("location") if pst else None
         row["post_pin"] = pst.get("post_pin") if pst else None
         row["post_pin_display"] = _format_pin(row.get("vendor_code"), row.get("post_pin"))
         row["city"] = pst.get("city") if pst else None
@@ -940,22 +1266,77 @@ async def update_schedule(sid: str, payload: ScheduleUpdate, request: Request, d
     if "shift_status" in upd and upd["shift_status"] not in SHIFT_STATUSES:
         raise HTTPException(400, f"Shift status must be one of {SHIFT_STATUSES}")
 
-    # Recompute duty_hours if times changed
+    # Validate Security Officer belongs to the selected Client.
+    selected_client_id = upd.get("client_id", existing.get("client_id"))
+    selected_officer_id = upd.get("officer_id", existing.get("officer_id"))
+
+    if selected_client_id and selected_officer_id:
+        client = await db.dispatch_clients.find_one(
+            {"_id": _oid(selected_client_id)}
+        )
+        if not client:
+            raise HTTPException(400, "Invalid client")
+
+        # TEMP / Open Shift are valid placeholders and do not have
+        # a corresponding dispatch_officers document.
+        if selected_officer_id not in SPECIAL_OFFICERS:
+            officer = await db.dispatch_officers.find_one(
+                {"_id": _oid(selected_officer_id)}
+            )
+
+            if not officer:
+                raise HTTPException(400, "Invalid officer")
+
+            if officer.get("status") != "active":
+                raise HTTPException(400, "Security Officer is not active.")
+
+            if str(officer.get("client_id") or "") != str(client["_id"]):
+                raise HTTPException(
+                    400,
+                    "Selected Security Officer does not belong to the selected Client."
+                )
+
+    # Duty hours: an explicit override (from the payslip editor) wins. Otherwise
+    # recompute from the start/end time only when the times actually changed, so
+    # a previously saved manual override is not wiped when editing other fields.
     st = upd.get("start_time", existing["start_time"])
     et = upd.get("end_time", existing["end_time"])
-    upd["duty_hours"] = _duty_hours(st, et)
+    if "duty_hours" in upd and upd.get("duty_hours") is not None:
+        upd["duty_hours"] = round(float(upd["duty_hours"]), 2)
+    elif "start_time" in upd or "end_time" in upd:
+        upd["duty_hours"] = _duty_hours(st, et)
 
-    # Conflict re-check when officer/date/times change
-    if any(k in upd for k in ("officer_id", "date", "start_time", "end_time")):
+    # Conflict re-check when officer/date/times change.
+    # Skip this for TEMP / Open Shift and UMA times because these
+    # are placeholders until the schedule is finalized.
+    conflict_officer = upd.get("officer_id", existing["officer_id"])
+    conflict_date = upd.get("date", existing["date"])
+
+    can_check_conflict = (
+        conflict_officer not in SPECIAL_OFFICERS
+        and st != UMA_TIME
+        and et != UMA_TIME
+    )
+
+    if (
+        can_check_conflict
+        and any(k in upd for k in ("officer_id", "date"))
+    ):
         conflict = await _check_conflict(
-            db, upd.get("officer_id", existing["officer_id"]),
-            upd.get("date", existing["date"]),
-            st, et, exclude_id=sid
+            db,
+            conflict_officer,
+            conflict_date,
+            st,
+            et,
+            exclude_id=sid
         )
+
         if conflict:
-            raise HTTPException(409,
+            raise HTTPException(
+                409,
                 f"Security Officer already has another shift on {conflict['date']} "
-                f"{conflict['start_time']}–{conflict['end_time']}.")
+                f"{conflict['start_time']}–{conflict['end_time']}."
+            )
 
     upd["updated_by"] = str(user["_id"]); upd["updated_at"] = _now()
     await db.dispatch_schedules.update_one({"_id": _oid(sid)}, {"$set": upd})
@@ -993,6 +1374,9 @@ async def update_shift_status(sid: str, payload: ShiftStatusUpdate, request: Req
         upd["actual_check_in"] = payload.actual_check_in
     if payload.actual_check_out is not None:
         upd["actual_check_out"] = payload.actual_check_out
+    # Accumulate the status remark into the combined remarks cell.
+    if payload.remarks and str(payload.remarks).strip():
+        upd["remarks"] = _merge_remark(existing.get("remarks"), payload.remarks)
     await db.dispatch_schedules.update_one({"_id": _oid(sid)}, {"$set": upd})
     await _log_action(db, sid, user, payload.shift_status,
                       old_value=old_status, new_value=payload.shift_status,
@@ -1071,17 +1455,21 @@ async def confirm_schedule(sid: str, payload: ConfirmationUpdate, request: Reque
     if not sched: raise HTTPException(404, "Schedule not found")
 
     now = _now()
+    set_doc = {
+        "confirmation_status": payload.confirmation_status,
+        "confirmation_method": payload.confirmation_method,
+        "confirmed_by_id": str(user["_id"]),
+        "confirmed_by_name": user.get("name"),
+        "confirmed_at": now,
+        "updated_by": str(user["_id"]),
+        "updated_at": now,
+    }
+    # Accumulate the confirmation remark into the combined remarks cell.
+    if payload.remarks and str(payload.remarks).strip():
+        set_doc["remarks"] = _merge_remark(sched.get("remarks"), payload.remarks)
     await db.dispatch_schedules.update_one(
         {"_id": _oid(sid)},
-        {"$set": {
-            "confirmation_status": payload.confirmation_status,
-            "confirmation_method": payload.confirmation_method,
-            "confirmed_by_id": str(user["_id"]),
-            "confirmed_by_name": user.get("name"),
-            "confirmed_at": now,
-            "updated_by": str(user["_id"]),
-            "updated_at": now,
-        }}
+        {"$set": set_doc}
     )
     # Append history entry
     await db.dispatch_confirmation_history.insert_one({
@@ -1106,12 +1494,24 @@ async def confirm_schedule(sid: str, payload: ConfirmationUpdate, request: Reque
                  changes={"confirmation_status": {"from": sched.get("confirmation_status"),
                                                   "to": payload.confirmation_status},
                           "method": payload.confirmation_method})
-    # Resolve officer + post-site names for a human-friendly notification
-    officer = await db.dispatch_officers.find_one({"_id": _oid(sched["officer_id"])}, {"name": 1}) \
-        if sched.get("officer_id") else None
-    post = await db.dispatch_post_sites.find_one({"_id": _oid(sched["post_site_id"])}, {"name": 1, "post_pin": 1}) \
-        if sched.get("post_site_id") else None
-    officer_name = (officer or {}).get("name", "Officer")
+    # Resolve officer + post-site names for a human-friendly notification.
+    # TEMP / OPEN_SHIFT are placeholders and are not MongoDB ObjectIds.
+    officer_id = sched.get("officer_id")
+    if officer_id in SPECIAL_OFFICERS:
+        officer_name = "Temporary Officer" if officer_id == "TEMP" else "Open Shift"
+    elif officer_id:
+        officer = await db.dispatch_officers.find_one(
+            {"_id": _oid(officer_id)},
+            {"name": 1}
+        )
+        officer_name = (officer or {}).get("name", "Officer")
+    else:
+        officer_name = "Officer"
+
+    post = await db.dispatch_post_sites.find_one(
+        {"_id": _oid(sched["post_site_id"])},
+        {"name": 1, "post_pin": 1}
+    ) if sched.get("post_site_id") else None
     post_label = f"{(post or {}).get('post_pin', '')} {(post or {}).get('name', '')}".strip() or "post site"
     await _notify_dispatch(
         db, user,
@@ -1549,6 +1949,420 @@ async def report_by_vendor(request: Request, db=Depends(get_db),
     return {"items": out, "date_from": date_from, "date_to": date_to, "count": len(out)}
 
 
+
+
+
+@router.get("/advance-salary")
+async def get_advance_salary(
+    request: Request,
+    db=Depends(get_db),
+    officer_id: str = None,
+    client_id: str = None,
+    date_from: str = None,
+    date_to: str = None,
+):
+    """Advance-salary ledger for one officer + client.
+
+    'advance' entries increase the outstanding balance; 'repayment' entries
+    reduce it. The balance carries across payslips (per officer + client).
+    """
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.financial.view")
+
+    if not officer_id:
+        raise HTTPException(400, "officer_id is required")
+
+    q = {"officer_id": officer_id}
+    if client_id:
+        q["client_id"] = client_id
+
+    docs = await db.dispatch_advance_salary.find(q).sort(
+        [("entry_date", 1), ("created_at", 1)]
+    ).to_list(2000)
+
+    balance = 0.0
+    entries = []
+    for doc in docs:
+        entry = _doc_out(doc)
+        amount = float(entry.get("amount") or 0)
+        if entry.get("type") == "advance":
+            balance += amount
+        else:
+            balance -= amount
+        entry["balance_after"] = round(balance, 2)
+        # System repayments created from payslip deductions reduce the balance
+        # but are managed from the payslip Deductions editor, so they are hidden
+        # from the manual ledger table.
+        if doc.get("source") == "payslip_deduction":
+            continue
+        entries.append(entry)
+
+    def _in_period(d):
+        ed = str(d.get("entry_date") or "")
+        if date_from and ed < date_from:
+            return False
+        if date_to and ed > date_to:
+            return False
+        return True
+
+    # Totals are computed over ALL docs (including hidden system payslip
+    # deduction repayments) so that remaining_balance == total_advanced -
+    # total_repaid always holds, even though the system rows are not listed.
+    total_advanced = round(
+        sum(float(x.get("amount") or 0) for x in docs if x.get("type") == "advance"), 2)
+    total_repaid = round(
+        sum(float(x.get("amount") or 0) for x in docs if x.get("type") == "repayment"), 2)
+    period_taken = round(
+        sum(float(x.get("amount") or 0) for x in docs
+            if x.get("type") == "advance" and _in_period(x)), 2)
+    period_repaid = round(
+        sum(float(x.get("amount") or 0) for x in docs
+            if x.get("type") == "repayment" and _in_period(x)), 2)
+
+    return {
+        "officer_id": officer_id,
+        "client_id": client_id,
+        "entries": entries,
+        "total_advanced": total_advanced,
+        "total_repaid": total_repaid,
+        "remaining_balance": round(balance, 2),
+        "period_taken": period_taken,
+        "period_repaid": period_repaid,
+    }
+
+
+@router.post("/advance-salary")
+async def create_advance_salary_entry(request: Request, db=Depends(get_db)):
+    """Record one advance taken or one repayment with a manual date."""
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.financial.adjust")
+
+    payload = await request.json()
+
+    officer_id = str(payload.get("officer_id") or "").strip()
+    client_id = str(payload.get("client_id") or "").strip() or None
+    if not officer_id:
+        raise HTTPException(400, "officer_id is required")
+    if not client_id:
+        raise HTTPException(400, "client_id is required")
+
+    entry_type = str(payload.get("type") or "").strip().lower()
+    if entry_type not in ("advance", "repayment"):
+        raise HTTPException(400, "type must be 'advance' or 'repayment'")
+
+    entry_date = str(payload.get("entry_date") or "").strip()
+    if not entry_date:
+        raise HTTPException(400, "entry_date is required")
+
+    note = str(payload.get("note") or "").strip()
+
+    try:
+        amount = round(float(payload.get("amount") or 0), 2)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "amount must be a number")
+    if amount <= 0:
+        raise HTTPException(400, "amount must be greater than zero")
+
+    existing = await db.dispatch_advance_salary.find(
+        {"officer_id": officer_id, "client_id": client_id}
+    ).to_list(2000)
+    current_balance = 0.0
+    for doc in existing:
+        amt = float(doc.get("amount") or 0)
+        if doc.get("type") == "advance":
+            current_balance += amt
+        else:
+            current_balance -= amt
+    current_balance = round(current_balance, 2)
+
+    if entry_type == "repayment" and amount > current_balance + 0.001:
+        raise HTTPException(
+            400,
+            f"Repayment cannot exceed the outstanding advance balance "
+            f"of ${current_balance:,.2f}",
+        )
+
+    now = _now()
+    doc = {
+        "officer_id": officer_id,
+        "client_id": client_id,
+        "type": entry_type,
+        "amount": amount,
+        "entry_date": entry_date,
+        "note": note,
+        "created_at": now,
+        "created_by": str(user.get("id") or user.get("_id") or ""),
+    }
+    result = await db.dispatch_advance_salary.insert_one(doc)
+    saved = await db.dispatch_advance_salary.find_one({"_id": result.inserted_id})
+
+    new_balance = (
+        current_balance + amount if entry_type == "advance"
+        else current_balance - amount
+    )
+    out = _doc_out(saved)
+    out["balance_after"] = round(new_balance, 2)
+    return out
+
+
+@router.delete("/advance-salary/{entry_id}")
+async def delete_advance_salary_entry(entry_id: str, request: Request, db=Depends(get_db)):
+    """Delete one advance/repayment entry, keeping the ledger valid."""
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.financial.adjust")
+
+    try:
+        oid = ObjectId(entry_id)
+    except Exception:
+        raise HTTPException(400, "Invalid advance entry id")
+
+    doc = await db.dispatch_advance_salary.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(404, "Advance entry not found")
+
+    if doc.get("type") == "advance":
+        others = await db.dispatch_advance_salary.find({
+            "officer_id": doc.get("officer_id"),
+            "client_id": doc.get("client_id"),
+            "_id": {"$ne": oid},
+        }).to_list(2000)
+        balance = 0.0
+        for x in others:
+            amt = float(x.get("amount") or 0)
+            balance += amt if x.get("type") == "advance" else -amt
+        if balance < -0.001:
+            raise HTTPException(
+                400,
+                "This advance cannot be deleted because repayments depend on it.",
+            )
+
+    await db.dispatch_advance_salary.delete_one({"_id": oid})
+    return {"ok": True, "id": entry_id}
+
+
+@router.get("/advance-salary/statement")
+async def advance_salary_statement(
+    request: Request,
+    db=Depends(get_db),
+    officer_id: str = None,
+    client_id: str = None,
+):
+    """Downloadable PDF: an officer's full advance history (per client if a
+    client_id is given) with every advance, repayment and running balance."""
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.financial.view")
+
+    if not officer_id:
+        raise HTTPException(400, "officer_id is required")
+
+    q = {"officer_id": officer_id}
+    if client_id:
+        q["client_id"] = client_id
+
+    docs = await db.dispatch_advance_salary.find(q).sort(
+        [("entry_date", 1), ("created_at", 1)]
+    ).to_list(2000)
+
+    balance = 0.0
+    entries = []
+    total_advanced = 0.0
+    total_repaid = 0.0
+    for d in docs:
+        amount = float(d.get("amount") or 0)
+        if d.get("type") == "advance":
+            balance += amount
+            total_advanced += amount
+        else:
+            balance -= amount
+            total_repaid += amount
+        entries.append({
+            "entry_date": d.get("entry_date"),
+            "type": d.get("type"),
+            "note": d.get("note"),
+            "amount": amount,
+            "balance_after": round(balance, 2),
+        })
+
+    officer = await db.dispatch_officers.find_one({"_id": _oid(officer_id)}) if ObjectId.is_valid(officer_id) else None
+    officer_name = (officer or {}).get("name") or officer_id
+    client_name = None
+    if client_id and ObjectId.is_valid(client_id):
+        client = await db.dispatch_clients.find_one({"_id": ObjectId(client_id)})
+        client_name = (client or {}).get("name")
+
+    from utils.dispatch_reports import build_advance_statement_pdf
+    body = build_advance_statement_pdf(
+        officer_name=officer_name,
+        client_name=client_name,
+        entries=entries,
+        total_advanced=round(total_advanced, 2),
+        total_repaid=round(total_repaid, 2),
+        remaining_balance=round(balance, 2),
+    )
+    fname = f"advance-statement-{officer_name}.pdf".replace(" ", "-")
+    return StreamingResponse(
+        io.BytesIO(body), media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@router.get("/payslip-adjustment")
+async def get_payslip_adjustment(
+    request: Request,
+    db=Depends(get_db),
+    officer_id: str = None,
+    client_id: str = None,
+    date_from: str = None,
+    date_to: str = None,
+):
+    """Return the saved financial adjustments for one officer/client payslip."""
+
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.financial.view")
+
+    if not officer_id:
+        raise HTTPException(400, "officer_id is required")
+    if not client_id:
+        raise HTTPException(400, "client_id is required")
+    if not date_from or not date_to:
+        raise HTTPException(400, "date_from and date_to are required")
+
+    doc = await db.dispatch_payslip_adjustments.find_one({
+        "officer_id": officer_id,
+        "client_id": client_id,
+        "date_from": date_from,
+        "date_to": date_to,
+    })
+
+    if not doc:
+        return {
+            "officer_id": officer_id,
+            "client_id": client_id,
+            "date_from": date_from,
+            "date_to": date_to,
+            "extra_payments": [],
+            "deductions": [],
+        }
+
+    out = _doc_out(doc)
+    if not isinstance(out.get("extra_payments"), list):
+        out["extra_payments"] = []
+    if not isinstance(out.get("deductions"), list):
+        out["deductions"] = []
+    return out
+
+
+@router.put("/payslip-adjustment")
+async def save_payslip_adjustment(
+    request: Request,
+    db=Depends(get_db),
+    officer_id: str = None,
+    client_id: str = None,
+    date_from: str = None,
+    date_to: str = None,
+):
+    """Create/update Advance, Addition and Deduction for an officer payslip."""
+
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.financial.adjust")
+
+    if not officer_id:
+        raise HTTPException(400, "officer_id is required")
+    if not client_id:
+        raise HTTPException(400, "client_id is required")
+    if not date_from or not date_to:
+        raise HTTPException(400, "date_from and date_to are required")
+
+    payload = await request.json()
+
+    raw = payload.get("extra_payments") or []
+    if not isinstance(raw, list):
+        raise HTTPException(400, "extra_payments must be a list")
+
+    extra_payments = []
+    for r in raw:
+        if not isinstance(r, dict):
+            continue
+        try:
+            amount = round(float(r.get("amount") or 0), 2)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "amount must be a number")
+        if amount < 0:
+            raise HTTPException(400, "amount cannot be negative")
+        purpose = str(r.get("purpose") or "").strip()
+        date_v = str(r.get("date") or "").strip()
+        if amount == 0 and not purpose and not date_v:
+            continue
+        extra_payments.append({"date": date_v, "purpose": purpose, "amount": amount})
+
+    # ---- Manual deductions (plain line items that reduce net pay) -----------
+    # These are fully independent from the advance ledger. They only reduce the
+    # payslip net pay and appear as line items on the PDF (styled like extra
+    # payments). Advances have zero effect on net pay.
+    raw_ded = payload.get("deductions") or []
+    if not isinstance(raw_ded, list):
+        raise HTTPException(400, "deductions must be a list")
+
+    deductions = []
+    for r in raw_ded:
+        if not isinstance(r, dict):
+            continue
+        try:
+            amount = round(float(r.get("amount") or 0), 2)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "deduction amount must be a number")
+        if amount < 0:
+            raise HTTPException(400, "deduction amount cannot be negative")
+        purpose = str(r.get("purpose") or "").strip()
+        date_v = str(r.get("date") or "").strip()
+        if amount == 0 and not purpose and not date_v:
+            continue
+        deductions.append({"date": date_v, "purpose": purpose, "amount": amount})
+
+    now = _now()
+
+    key = {
+        "officer_id": officer_id,
+        "client_id": client_id,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
+
+    update = {
+        "$set": {
+            **key,
+            "extra_payments": extra_payments,
+            "deductions": deductions,
+            "updated_at": now,
+            "updated_by": str(user.get("id") or user.get("_id") or ""),
+        },
+        "$setOnInsert": {
+            "created_at": now,
+            "created_by": str(user.get("id") or user.get("_id") or ""),
+        },
+        "$unset": {"addition": "", "deduction": ""},
+    }
+
+    await db.dispatch_payslip_adjustments.update_one(
+        key,
+        update,
+        upsert=True,
+    )
+
+    # Clean up any legacy system repayments that older payslip-deduction logic
+    # may have posted to the advance ledger. Deductions no longer touch the
+    # ledger, so the advance statement stays fully independent.
+    await db.dispatch_advance_salary.delete_many({
+        "officer_id": officer_id,
+        "client_id": client_id,
+        "source": "payslip_deduction",
+    })
+
+    saved = await db.dispatch_payslip_adjustments.find_one(key)
+
+    return _doc_out(saved)
+
+
 @router.get("/reports/entity-detail")
 async def report_entity_detail(
     request: Request, db=Depends(get_db),
@@ -1687,6 +2501,49 @@ async def report_entity_detail(
                     "city": cdoc.get("city"),
                 }
 
+    # ---- Advance salary + payslip adjustments (officer payslip only) ----
+    advance_summary = None
+    extra_payments_list = []
+    deductions_list = []
+
+    if entity_type == "officer" and fin:
+        eff_client_id = client_id
+        if not eff_client_id and len(clients_available) == 1:
+            eff_client_id = clients_available[0]["id"]
+
+        adv_q = {"officer_id": entity_id}
+        if eff_client_id:
+            adv_q["client_id"] = eff_client_id
+        adv_docs = await db.dispatch_advance_salary.find(adv_q).to_list(2000)
+
+        total_advanced = total_repaid = 0.0
+        period_taken = period_repaid = 0.0
+        for d in adv_docs:
+            amt = float(d.get("amount") or 0)
+            ed = str(d.get("entry_date") or "")
+            in_period = (not date_from or ed >= date_from) and (not date_to or ed <= date_to)
+            if d.get("type") == "advance":
+                total_advanced += amt
+                if in_period:
+                    period_taken += amt
+            else:
+                total_repaid += amt
+                if in_period:
+                    period_repaid += amt
+
+        advance_summary = {
+            "remaining_balance": round(total_advanced - total_repaid, 2),
+            "total_advanced": round(total_advanced, 2),
+            "total_repaid": round(total_repaid, 2),
+            "period_taken": round(period_taken, 2),
+            "period_repaid": round(period_repaid, 2),
+        }
+
+        # NOTE: Extra payments & deductions are NO LONGER pre-filled from a
+        # persisted adjustment doc. They are transient in the payslip editor and
+        # only persist when a payslip PDF record is generated. Reopening a saved
+        # record pre-fills them via GET /payslip-records/{id} on the frontend.
+
     summary = {
         "total_shifts": len(items),
         "completed": completed, "absent": absent, "late": late,
@@ -1709,6 +2566,34 @@ async def report_entity_detail(
         "client_filter_id": client_id,
         "date_from": date_from, "date_to": date_to,
         "summary": summary,
+        "advance": advance_summary,
+        "advance_remaining_balance": (
+            advance_summary.get("remaining_balance", 0) if advance_summary else 0
+        ),
+        "advance_taken_period": (
+            advance_summary.get("period_taken", 0) if advance_summary else 0
+        ),
+        "advance_repaid_period": (
+            advance_summary.get("period_repaid", 0) if advance_summary else 0
+        ),
+        "extra_payments": extra_payments_list,
+        "extra_payments_total": round(
+            sum(float(r.get("amount") or 0) for r in extra_payments_list), 2
+        ),
+        "deductions": deductions_list,
+        "deductions_total": round(
+            sum(float(r.get("amount") or 0) for r in deductions_list), 2
+        ),
+        "net_payment": (
+            round(
+                total_cost
+                + sum(float(r.get("amount") or 0) for r in extra_payments_list)
+                - sum(float(r.get("amount") or 0) for r in deductions_list),
+                2,
+            )
+            if fin else None
+        ),
+
         "items": items,
         "count": len(items),
     }
@@ -1753,13 +2638,52 @@ async def export_entity_detail(
         from utils.dispatch_reports import build_officer_payslip_pdf
         client_info = data.get("client_info") or {}
         officer_name = (data.get("entity") or {}).get("name") or entity_id
+
+        eff_client_id = client_id or (client_info.get("id") if client_info else None)
+
+        extra_payment_rows = data.get("extra_payments") or []
+        deduction_rows = data.get("deductions") or []
+        advance_entries = []
+        remaining_balance = 0.0
+        period_taken = 0.0
+        period_repaid = 0.0
+
+        if fin and eff_client_id:
+            adv_docs = await db.dispatch_advance_salary.find({
+                "officer_id": entity_id,
+                "client_id": eff_client_id,
+            }).sort([("entry_date", 1), ("created_at", 1)]).to_list(2000)
+
+            total_adv = total_rep = 0.0
+            for d in adv_docs:
+                amt = float(d.get("amount") or 0)
+                ed = str(d.get("entry_date") or "")
+                in_period = (ed >= data["date_from"]) and (ed <= data["date_to"])
+                if d.get("type") == "advance":
+                    total_adv += amt
+                    if in_period:
+                        period_taken += amt
+                        advance_entries.append({"date": ed, "amount": amt})
+                else:
+                    total_rep += amt
+                    if in_period:
+                        period_repaid += amt
+            remaining_balance = round(total_adv - total_rep, 2)
+
         body = build_officer_payslip_pdf(
             client_name=client_info.get("name"),
             client_logo_url=client_info.get("logo_url"),
             officer_name=officer_name,
-            date_from=data["date_from"], date_to=data["date_to"],
+            date_from=data["date_from"],
+            date_to=data["date_to"],
             rows=data["items"],
             show_financial=fin,
+            extra_payment_rows=extra_payment_rows,
+            deduction_rows=deduction_rows,
+            advance_taken=round(period_taken, 2),
+            advance_repaid=round(period_repaid, 2),
+            remaining_balance=remaining_balance,
+            advance_entries=advance_entries,
         )
         return StreamingResponse(io.BytesIO(body), media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="payslip-{officer_name}-{data["date_from"]}-{data["date_to"]}.pdf"'})
@@ -1814,110 +2738,199 @@ async def export_entity_detail(
         headers={"Content-Disposition": f'attachment; filename="{fname_base}.pdf"'})
 
 
-# ---------- Payslip customization: advance ledger + custom-payslip export ----
-from pydantic import BaseModel, Field
-from typing import List, Optional
+# ---------- Saved payslip records (generate → save → preview/modify) ----------
+
+def _normalize_payslip_lines(raw):
+    """Coerce incoming extra/deduction lines to clean {date, purpose, amount}."""
+    out = []
+    for r in (raw or []):
+        r = r.model_dump() if hasattr(r, "model_dump") else dict(r or {})
+        try:
+            amount = round(float(r.get("amount") or 0), 2)
+        except (TypeError, ValueError):
+            amount = 0.0
+        if amount < 0:
+            raise HTTPException(400, "amount cannot be negative")
+        purpose = str(r.get("purpose") or "").strip()
+        date_v = str(r.get("date") or "").strip()
+        if amount == 0 and not purpose and not date_v:
+            continue
+        out.append({"date": date_v, "purpose": purpose, "amount": amount})
+    return out
 
 
-class PayslipExtra(BaseModel):
-    label: str
-    amount: float = 0.0
-
-
-class PayslipCustomizePayload(BaseModel):
-    entity_id: str  # officer id
-    date_from: str
-    date_to: str
-    client_id: Optional[str] = None
-    advance_amount: float = 0.0
-    extras: List[PayslipExtra] = Field(default_factory=list)
-    commit_carryforward: bool = True
-
-
-def _advance_key(officer_id: str, client_id: Optional[str]) -> dict:
-    """Ledger key: per officer, and per client when a client filter is used."""
-    return {"officer_id": officer_id, "client_id": client_id or None}
-
-
-@router.get("/reports/advance-balance")
-async def get_advance_balance(
-    request: Request, db=Depends(get_db),
-    officer_id: str = None, client_id: str = None,
+async def _build_officer_payslip_bytes(
+    request, db, user, officer_id, client_id, date_from, date_to,
+    extra_payment_rows, deduction_rows,
 ):
-    """Outstanding unused-advance carried from the last payslip for this
-    officer (and optionally this client). Returns 0 when none."""
-    user = await get_current_user(request, db)
-    require_permission(user, "dispatch.reports.view")
-    if not officer_id:
-        raise HTTPException(400, "officer_id is required")
-    doc = await db.dispatch_advance_ledger.find_one(_advance_key(officer_id, client_id))
-    return {
-        "officer_id": officer_id,
-        "client_id": client_id or None,
-        "balance": float((doc or {}).get("balance") or 0),
-        "updated_at": (doc or {}).get("updated_at"),
-    }
-
-
-@router.post("/reports/export/entity-detail/payslip")
-async def export_officer_payslip_custom(
-    payload: PayslipCustomizePayload,
-    request: Request, db=Depends(get_db),
-):
-    """Render the officer payslip PDF with user-supplied extras + advance
-    deduction, and (optionally) persist any unused advance so it carries
-    forward to the next pay period."""
-    user = await get_current_user(request, db)
-    require_permission(user, "dispatch.reports.export")
-
-    data = await report_entity_detail(
-        request, db,
-        entity_type="officer", entity_id=payload.entity_id,
-        date_from=payload.date_from, date_to=payload.date_to,
-        client_id=payload.client_id,
-    )
-    fin = has_permission(user, "dispatch.financial.view")
-    if not fin:
-        raise HTTPException(403, "Financial permission required for payslip export")
-
-    subtotal = float((data.get("summary") or {}).get("total_amount") or 0)
-    extras_list = [e.model_dump() for e in payload.extras]
-    extras_total = sum(float(e["amount"] or 0) for e in extras_list)
-    gross = subtotal + extras_total
-    advance = max(0.0, float(payload.advance_amount or 0))
-    applied = min(advance, gross)
-    net_payable = round(gross - applied, 2)
-    carry_forward = round(max(0.0, advance - gross), 2)
-
-    if payload.commit_carryforward:
-        key = _advance_key(payload.entity_id, payload.client_id)
-        await db.dispatch_advance_ledger.update_one(
-            key,
-            {"$set": {**key, "balance": carry_forward,
-                      "updated_at": datetime.now(timezone.utc)}},
-            upsert=True,
-        )
-
+    """Generate the branded payslip PDF bytes for the given values and return
+    (bytes, snapshot) where snapshot has gross / net / officer_name / client_name.
+    Advances have zero effect on net; only 'Remaining Advance Balance' is shown."""
     from utils.dispatch_reports import build_officer_payslip_pdf
+
+    fin = has_permission(user, "dispatch.financial.view")
+    data = await report_entity_detail(
+        request, db, entity_type="officer", entity_id=officer_id,
+        date_from=date_from, date_to=date_to, client_id=client_id,
+    )
     client_info = data.get("client_info") or {}
-    officer_name = (data.get("entity") or {}).get("name") or payload.entity_id
+    officer_name = (data.get("entity") or {}).get("name") or officer_id
+    eff_client_id = client_id or (client_info.get("id") if client_info else None)
+
+    remaining_balance = 0.0
+    if fin and eff_client_id:
+        adv_docs = await db.dispatch_advance_salary.find({
+            "officer_id": officer_id, "client_id": eff_client_id,
+        }).to_list(2000)
+        total_adv = sum(float(d.get("amount") or 0) for d in adv_docs if d.get("type") == "advance")
+        total_rep = sum(float(d.get("amount") or 0) for d in adv_docs if d.get("type") != "advance")
+        remaining_balance = round(total_adv - total_rep, 2)
+
     body = build_officer_payslip_pdf(
         client_name=client_info.get("name"),
         client_logo_url=client_info.get("logo_url"),
         officer_name=officer_name,
-        date_from=data["date_from"], date_to=data["date_to"],
+        date_from=data["date_from"],
+        date_to=data["date_to"],
         rows=data["items"],
-        show_financial=True,
-        extras=extras_list,
-        advance_amount=advance,
-        carry_forward=carry_forward,
-        net_payable=net_payable,
+        show_financial=fin,
+        extra_payment_rows=extra_payment_rows,
+        deduction_rows=deduction_rows,
+        advance_taken=0.0,
+        advance_repaid=0.0,
+        remaining_balance=remaining_balance,
+        advance_entries=[],
     )
-    fname = f'payslip-{officer_name}-{data["date_from"]}-{data["date_to"]}.pdf'
-    return StreamingResponse(
-        io.BytesIO(body), media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+
+    gross = float((data.get("summary") or {}).get("total_amount") or 0) if fin else 0.0
+    extra_total = sum(float(r.get("amount") or 0) for r in extra_payment_rows)
+    ded_total = sum(float(r.get("amount") or 0) for r in deduction_rows)
+    net = round(gross + extra_total - ded_total, 2)
+    return body, {
+        "gross": round(gross, 2),
+        "net_payment": net,
+        "officer_name": officer_name,
+        "client_name": client_info.get("name"),
+    }
+
+
+def _payslip_record_out(doc):
+    out = _doc_out(doc)
+    if doc.get("pdf_path"):
+        out["pdf_url"] = to_public_url(doc["pdf_path"])
+    out.setdefault("extra_payments", [])
+    out.setdefault("deductions", [])
+    return out
+
+
+@router.post("/payslip-records")
+async def create_payslip_record(payload: PayslipRecordCreate, request: Request, db=Depends(get_db)):
+    """Generate a payslip PDF and SAVE it as a record (one per officer+client+
+    period; regenerating overwrites). Extra payments & deductions are baked into
+    the PDF and stored so the record can later be previewed, downloaded, or
+    reopened for editing."""
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.reports.export")
+
+    officer_id = payload.officer_id
+    client_id = payload.client_id
+    date_from = payload.date_from
+    date_to = payload.date_to
+    if not (officer_id and client_id and date_from and date_to):
+        raise HTTPException(400, "officer_id, client_id, date_from and date_to are required")
+
+    extra_rows = _normalize_payslip_lines(payload.extra_payments)
+    ded_rows = _normalize_payslip_lines(payload.deductions)
+
+    body, snap = await _build_officer_payslip_bytes(
+        request, db, user, officer_id, client_id, date_from, date_to, extra_rows, ded_rows,
     )
+
+    # Persist the PDF file (overwrite the previous file for this period).
+    from utils.storage import put_object, generate_upload_path
+    key = {"officer_id": officer_id, "client_id": client_id,
+           "date_from": date_from, "date_to": date_to}
+    prev = await db.dispatch_payslip_records.find_one(key)
+    path = generate_upload_path(f"payslips/{officer_id}", f"payslip-{date_from}-{date_to}.pdf")
+    put_object(path, body, "application/pdf")
+
+    now = _now()
+    doc = {
+        **key,
+        "extra_payments": extra_rows,
+        "deductions": ded_rows,
+        "pdf_path": path,
+        "gross": snap["gross"],
+        "net_payment": snap["net_payment"],
+        "officer_name": snap["officer_name"],
+        "client_name": snap["client_name"],
+        "generated_at": now,
+        "generated_by": str(user.get("id") or user.get("_id") or ""),
+    }
+    await db.dispatch_payslip_records.update_one(
+        key,
+        {"$set": doc, "$setOnInsert": {"created_at": now}},
+        upsert=True,
+    )
+    saved = await db.dispatch_payslip_records.find_one(key)
+    return _payslip_record_out(saved)
+
+
+@router.get("/payslip-records")
+async def list_payslip_records(request: Request, db=Depends(get_db),
+                               officer_id: str = None, client_id: str = None):
+    """List saved payslip records (most recent first). Filter by officer/client."""
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.reports.view")
+    q = {}
+    if officer_id:
+        q["officer_id"] = officer_id
+    if client_id:
+        q["client_id"] = client_id
+    docs = await db.dispatch_payslip_records.find(q).sort(
+        [("generated_at", -1)]).to_list(500)
+    return [_payslip_record_out(d) for d in docs]
+
+
+@router.get("/payslip-records/{rid}")
+async def get_payslip_record(rid: str, request: Request, db=Depends(get_db)):
+    """Fetch one saved payslip record (extra/deductions pre-fill on modify)."""
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.reports.view")
+    doc = await db.dispatch_payslip_records.find_one({"_id": _oid(rid)})
+    if not doc:
+        raise HTTPException(404, "Payslip record not found")
+    return _payslip_record_out(doc)
+
+
+@router.get("/payslip-records/{rid}/pdf")
+async def download_payslip_record_pdf(rid: str, request: Request, db=Depends(get_db)):
+    """Stream the saved PDF for a record."""
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.reports.view")
+    doc = await db.dispatch_payslip_records.find_one({"_id": _oid(rid)})
+    if not doc or not doc.get("pdf_path"):
+        raise HTTPException(404, "Payslip PDF not found")
+    from utils.storage import get_object
+    try:
+        data, _ = get_object(doc["pdf_path"])
+    except FileNotFoundError:
+        raise HTTPException(404, "Payslip PDF file missing")
+    fname = f"payslip-{doc.get('officer_name') or 'officer'}-{doc.get('date_from')}-{doc.get('date_to')}.pdf"
+    return StreamingResponse(io.BytesIO(data), media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{fname}"'})
+
+
+@router.delete("/payslip-records/{rid}")
+async def delete_payslip_record(rid: str, request: Request, db=Depends(get_db)):
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.reports.export")
+    doc = await db.dispatch_payslip_records.find_one({"_id": _oid(rid)})
+    if not doc:
+        raise HTTPException(404, "Payslip record not found")
+    await db.dispatch_payslip_records.delete_one({"_id": _oid(rid)})
+    return {"ok": True}
+
 
 
 # ---------- Export (CSV / PDF) — respects financial permission ----------

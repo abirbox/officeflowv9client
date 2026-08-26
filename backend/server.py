@@ -31,6 +31,7 @@ from routes.office_locations import router as office_locations_router
 from routes.reports import router as reports_router
 from routes.dispatch import router as dispatch_router
 from routes.dispatch_invoices import router as dispatch_invoices_router
+from routes.so_payments import router as so_payments_router
 from routes.presence import router as presence_router
 from utils.auth import hash_password, verify_password
 from utils.storage import init_storage, get_object
@@ -55,9 +56,12 @@ app.state.db = db
 async def seed_admin():
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
-    
-    existing = await db.users.find_one({"email": admin_email})
-    if existing is None:
+
+    # Only create the bootstrap Super Admin on a completely empty
+    # users collection. Do not recreate a manually deleted admin.
+    user_count = await db.users.count_documents({})
+
+    if user_count == 0:
         hashed = hash_password(admin_password)
         await db.users.insert_one({
             "email": admin_email,
@@ -68,14 +72,12 @@ async def seed_admin():
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc)
         })
-        logger.info(f"Admin user created: {admin_email}")
-    elif not verify_password(admin_password, existing["password_hash"]):
-        await db.users.update_one(
-            {"email": admin_email},
-            {"$set": {"password_hash": hash_password(admin_password), "updated_at": datetime.now(timezone.utc)}}
+        logger.info(f"Initial Super Admin created: {admin_email}")
+    else:
+        logger.info(
+            f"Skipping default admin seed: {user_count} user(s) already exist"
         )
-        logger.info(f"Admin password updated: {admin_email}")
-    
+
     credentials_content = f"""# OfficeFlow Test Credentials
 
 ## Admin Account
@@ -97,11 +99,13 @@ async def seed_admin():
 - Password: Test@123
 - Role: employee
 """
-    
-    with open("/app/memory/test_credentials.md", "w") as f:
-        f.write(credentials_content)
-    
-    logger.info("Test credentials file updated")
+
+    try:
+        with open("/app/memory/test_credentials.md", "w") as f:
+            f.write(credentials_content)
+        logger.info("Test credentials file updated")
+    except Exception as e:
+        logger.warning(f"Could not update test credentials file: {e}")
 
 @app.on_event("startup")
 async def startup():
@@ -138,6 +142,7 @@ async def startup():
         await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
         await db.user_presence.create_index("user_id", unique=True)
         await db.user_presence.create_index("last_seen")
+        await db.dispatch_advance_salary.create_index([("officer_id", 1), ("client_id", 1)])
         logger.info("Database indexes created")
         
         await seed_admin()
@@ -200,6 +205,7 @@ api_router.include_router(office_locations_router)
 api_router.include_router(reports_router)
 api_router.include_router(dispatch_router)
 api_router.include_router(dispatch_invoices_router)
+api_router.include_router(so_payments_router)
 api_router.include_router(presence_router)
 
 

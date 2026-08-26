@@ -187,7 +187,16 @@ const DispatchAuditPage = () => {
               return (
                 <tr key={row.id} data-testid={`audit-row-${i}`} className="hover:bg-[#F8FAFC] dark:hover:bg-[#0F0F11]">
                   <td className="px-4 py-3 whitespace-nowrap text-[#334155] dark:text-[#E4E4E7]">
-                    {new Date(row.at).toLocaleString()}
+                    {new Date(row.at).toLocaleString('en-GB', {
+  timeZone: 'Asia/Dhaka',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: true
+})}
                   </td>
                   <td className="px-4 py-3">
                     <span className="font-medium text-[#0F172A] dark:text-[#FAFAFA]">{row.actor_name || '—'}</span>

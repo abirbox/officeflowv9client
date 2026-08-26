@@ -8,13 +8,32 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/components/ui/sonner';
-import { Download, FileText, FileSpreadsheet, ChevronRight, Trash2, Plus, X } from 'lucide-react';
+import { Download, FileText, FileSpreadsheet, ChevronRight, Trash2, Plus } from 'lucide-react';
 import useAuthStore from '@/stores/authStore';
 import { hasPermission } from '@/lib/permissions';
 import { formatPin } from './_shared';
 
 const isoToday = () => new Date().toISOString().slice(0, 10);
 const isoDaysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+
+// Dispatch financial values use USD.
+const formatCurrency = (value) => {
+  if (value === null || value === undefined || value === '') return '—';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  return `$${n.toFixed(2)}`;
+};
+
+const FINANCIAL_KEYS = new Set([
+  'duty_rate',
+  'billing_rate',
+  'cost_amount',
+  'billing_amount',
+  'margin',
+  'hourly_rate',
+  'total',
+  'total_amount',
+]);
 
 const REPORT_TABS = [
   { key: 'schedules', label: 'Schedules', endpoint: '/dispatch/reports/schedules',
@@ -73,10 +92,11 @@ const DispatchReportsPage = () => {
   const canView = hasPermission(user, 'dispatch.reports.view');
   const canExport = hasPermission(user, 'dispatch.reports.export');
   const canFinancial = hasPermission(user, 'dispatch.financial.view');
+  const canAdjust = hasPermission(user, 'dispatch.financial.adjust');
   const canDelete = hasPermission(user, 'dispatch.schedule.delete');
 
   const [active, setActive] = useState('schedules');
-  const [dateFrom, setDateFrom] = useState(isoDaysAgo(30));
+  const [dateFrom, setDateFrom] = useState(isoDaysAgo(6));
   const [dateTo, setDateTo] = useState(isoToday());
   const [limit, setLimit] = useState(50);
   const [query, setQuery] = useState('');
@@ -102,9 +122,30 @@ const DispatchReportsPage = () => {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickedCols, setPickedCols] = useState([]);
   const [clientFilter, setClientFilter] = useState(''); // officer-only: filter shifts by client
+  const [advance, setAdvance] = useState({
+    entries: [],
+    total_advanced: 0,
+    total_repaid: 0,
+    remaining_balance: 0,
+    period_taken: 0,
+    period_repaid: 0,
+  });
+  const [advLoading, setAdvLoading] = useState(false);
+  const [advSaving, setAdvSaving] = useState(false);
+  const [advDialog, setAdvDialog] = useState(null); // 'advance' | 'repayment'
+  const [advAmount, setAdvAmount] = useState('');
+  const [advDate, setAdvDate] = useState('');
+  const [advNote, setAdvNote] = useState('');
+  const [extraRows, setExtraRows] = useState([]); // [{date, purpose, amount}]
+  const [deductionRows, setDeductionRows] = useState([]); // [{date, purpose, amount}]
+  const [adjSaving, setAdjSaving] = useState(false);
+  const [savedRecords, setSavedRecords] = useState([]); // saved payslip PDF records
+  const [genLoading, setGenLoading] = useState(false);
+  const [editingRecordId, setEditingRecordId] = useState(null); // record being modified
+  const [scheduleEdits, setScheduleEdits] = useState({}); // id -> {duty_hours, duty_rate}
+  const [savingEdits, setSavingEdits] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null); // { id, date, officer_name, ... }
   const [deleting, setDeleting] = useState(false);
-  const [payslipDialog, setPayslipDialog] = useState(false);
 
   const confirmDelete = async () => {
     if (!pendingDelete?.id) return;
@@ -132,38 +173,341 @@ const DispatchReportsPage = () => {
     finally { setDetailLoading(false); }
   }, [dateFrom, dateTo]);
 
+
   const openDetail = async (row) => {
     const entity_type = ENTITY_TYPE_BY_TAB[active];
     const entity_id = row[ENTITY_ID_KEY[active]];
+
     if (!entity_type || !entity_id) return;
-    setDetail({ entity_type, entity_id, entity_name: row[ENTITY_NAME_KEY[active]] });
+
+    setDetail({
+      entity_type,
+      entity_id,
+      entity_name: row[ENTITY_NAME_KEY[active]],
+    });
+
     setClientFilter('');
+
     // Initialize picker with ALL allowed columns
-    const allKeys = [...ENTITY_EXPORT_COLS.map(c => c.key), ...(canFinancial ? ENTITY_EXPORT_COLS_FIN.map(c => c.key) : [])];
+    const allKeys = [
+      ...ENTITY_EXPORT_COLS.map(c => c.key),
+      ...(canFinancial ? ENTITY_EXPORT_COLS_FIN.map(c => c.key) : []),
+    ];
+
     setPickedCols(allKeys);
+
     await fetchDetail(entity_type, entity_id, '');
   };
 
   // Re-fetch when the officer/client filter changes
   useEffect(() => {
     if (detail && detail.entity_type === 'officer') {
-      fetchDetail(detail.entity_type, detail.entity_id, clientFilter);
+      fetchDetail(
+        detail.entity_type,
+        detail.entity_id,
+        clientFilter
+      );
     }
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientFilter]);
 
-  const isOfficerPayslip = detail?.entity_type === 'officer' && detail?.data?.client_info;
-  const paidHoursTotal = detail?.data?.summary?.total_duty_hours ?? 0;
-  const actualHoursTotal = detail?.data?.summary?.total_actual_hours ?? 0;
-  const totalAmount = detail?.data?.summary?.total_amount ?? 0;
+  const isOfficerPayslip =
+    detail?.entity_type === 'officer' &&
+    detail?.data?.client_info;
 
-  const MIME_BY_FMT = {
-    csv: 'text/csv',
-    pdf: 'application/pdf',
-    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  const paidHoursTotal =
+    detail?.data?.summary?.total_duty_hours ?? 0;
+
+  const actualHoursTotal =
+    detail?.data?.summary?.total_actual_hours ?? 0;
+
+  const totalAmount =
+    detail?.data?.summary?.total_amount ?? 0;
+
+  const payslipClientId =
+    detail?.data?.client_info?.id || clientFilter || '';
+
+  const periodTaken = Number(advance.period_taken || 0);
+  const periodRepaid = Number(advance.period_repaid || 0);
+  const extraTotal = extraRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const deductionTotal = deductionRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+
+  const netPayment =
+    Number(totalAmount) + extraTotal - deductionTotal;
+
+
+
+  const loadAdvance = useCallback(async () => {
+    if (detail?.entity_type !== 'officer' || !detail?.entity_id) return;
+    const cid = detail?.data?.client_info?.id || clientFilter || '';
+    if (!cid) {
+      setAdvance({ entries: [], total_advanced: 0, total_repaid: 0, remaining_balance: 0, period_taken: 0, period_repaid: 0 });
+      return;
+    }
+    setAdvLoading(true);
+    try {
+      const { data } = await api.get('/dispatch/advance-salary', {
+        params: { officer_id: detail.entity_id, client_id: cid, date_from: dateFrom, date_to: dateTo },
+      });
+      setAdvance({
+        entries: data?.entries || [],
+        total_advanced: Number(data?.total_advanced || 0),
+        total_repaid: Number(data?.total_repaid || 0),
+        remaining_balance: Number(data?.remaining_balance || 0),
+        period_taken: Number(data?.period_taken || 0),
+        period_repaid: Number(data?.period_repaid || 0),
+      });
+    } catch (e) {
+      toast.error(formatApiErrorDetail(e.response?.data?.detail) || 'Failed to load advance salary');
+    } finally {
+      setAdvLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.entity_type, detail?.entity_id, detail?.data?.client_info?.id, clientFilter, dateFrom, dateTo]);
+
+  useEffect(() => {
+    if (detail?.entity_type === 'officer') {
+      loadAdvance();
+    } else {
+      setAdvance({ entries: [], total_advanced: 0, total_repaid: 0, remaining_balance: 0, period_taken: 0, period_repaid: 0 });
+    }
+  }, [detail?.entity_type, detail?.entity_id, loadAdvance]);
+
+  // Fresh payslip open: extra/deduction editors start EMPTY (never persisted
+  // unless a PDF record is generated). Schedule edits are seeded from the rows.
+  const payslipIdentity = `${detail?.entity_id || ''}|${detail?.data?.client_info?.id || ''}|${dateFrom}|${dateTo}`;
+  useEffect(() => {
+    setExtraRows([]);
+    setDeductionRows([]);
+    setEditingRecordId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payslipIdentity]);
+
+  // Seed the editable hours/rate map whenever the payslip rows load.
+  useEffect(() => {
+    const items = detail?.data?.items || [];
+    const map = {};
+    items.forEach((r) => {
+      map[r.id] = {
+        duty_hours: r.duty_hours != null ? String(r.duty_hours) : '',
+        duty_rate: r.hourly_rate != null ? String(r.hourly_rate) : (r.duty_rate != null ? String(r.duty_rate) : ''),
+      };
+    });
+    setScheduleEdits(map);
+  }, [detail?.data?.items]);
+
+  const openAdvanceDialog = (type) => {
+    setAdvDialog(type);
+    setAdvAmount('');
+    setAdvNote('');
+    setAdvDate(isoToday());
   };
 
-  const downloadEntityDetail = async (fmt, opts = {}) => {
+  const closeAdvanceDialog = () => {
+    if (advSaving) return;
+    setAdvDialog(null);
+    setAdvAmount('');
+    setAdvNote('');
+    setAdvDate('');
+  };
+
+  const saveAdvance = async () => {
+    const amount = Number(advAmount);
+    if (!Number.isFinite(amount) || amount <= 0) { toast.error('Enter a valid amount'); return; }
+    if (!advDate) { toast.error('Select a date'); return; }
+    const cid = payslipClientId;
+    if (!cid) { toast.error('Select a client first'); return; }
+    if (advDialog === 'repayment' && amount > Number(advance.remaining_balance || 0) + 0.001) {
+      toast.error(`Repayment cannot exceed the balance of ${formatCurrency(advance.remaining_balance)}`);
+      return;
+    }
+    setAdvSaving(true);
+    try {
+      await api.post('/dispatch/advance-salary', {
+        officer_id: detail.entity_id,
+        client_id: cid,
+        type: advDialog,
+        amount,
+        entry_date: advDate,
+        note: advNote.trim(),
+      });
+      toast.success(advDialog === 'advance' ? 'Advance recorded' : 'Repayment recorded');
+      closeAdvanceDialog();
+      await loadAdvance();
+      await fetchDetail(detail.entity_type, detail.entity_id, clientFilter);
+    } catch (e) {
+      toast.error(formatApiErrorDetail(e.response?.data?.detail) || 'Failed to save entry');
+    } finally {
+      setAdvSaving(false);
+    }
+  };
+
+  const deleteAdvanceEntry = async (id) => {
+    try {
+      await api.delete(`/dispatch/advance-salary/${id}`);
+      toast.success('Entry deleted');
+      await loadAdvance();
+      await fetchDetail(detail.entity_type, detail.entity_id, clientFilter);
+    } catch (e) {
+      toast.error(formatApiErrorDetail(e.response?.data?.detail) || 'Failed to delete entry');
+    }
+  };
+
+  const addExtraRow = () => setExtraRows((rows) => [...rows, { date: isoToday(), purpose: '', amount: '' }]);
+  const updateExtraRow = (idx, field, value) =>
+    setExtraRows((rows) => rows.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
+  const removeExtraRow = (idx) => setExtraRows((rows) => rows.filter((_, i) => i !== idx));
+
+  const addDeductionRow = () => setDeductionRows((rows) => [...rows, { date: isoToday(), purpose: '', amount: '' }]);
+  const updateDeductionRow = (idx, field, value) =>
+    setDeductionRows((rows) => rows.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
+  const removeDeductionRow = (idx) => setDeductionRows((rows) => rows.filter((_, i) => i !== idx));
+
+  const collectPayslipPayload = () => {
+    const payloadRows = extraRows
+      .map((r) => ({ date: r.date || '', purpose: (r.purpose || '').trim(), amount: Number(r.amount) || 0 }))
+      .filter((r) => r.amount !== 0 || r.purpose || r.date);
+    const payloadDeductions = deductionRows
+      .map((r) => ({ date: r.date || '', purpose: (r.purpose || '').trim(), amount: Number(r.amount) || 0 }))
+      .filter((r) => r.amount !== 0 || r.purpose || r.date);
+    return { payloadRows, payloadDeductions };
+  };
+
+  const loadSavedRecords = useCallback(async () => {
+    if (detail?.entity_type !== 'officer' || !detail?.entity_id) return;
+    const cid = detail?.data?.client_info?.id || clientFilter || '';
+    try {
+      const params = { officer_id: detail.entity_id };
+      if (cid) params.client_id = cid;
+      const { data } = await api.get('/dispatch/payslip-records', { params });
+      setSavedRecords(Array.isArray(data) ? data : []);
+    } catch (e) {
+      // Non-fatal; keep list empty
+      setSavedRecords([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.entity_type, detail?.entity_id, detail?.data?.client_info?.id, clientFilter]);
+
+  useEffect(() => {
+    if (detail?.entity_type === 'officer') loadSavedRecords();
+    else setSavedRecords([]);
+  }, [detail?.entity_type, detail?.entity_id, loadSavedRecords]);
+
+  // Generate the payslip PDF AND save it as a record (extra/deductions baked in).
+  const generatePayslip = async () => {
+    const cid = payslipClientId;
+    if (!cid) { toast.error('Select a client first'); return; }
+    const { payloadRows, payloadDeductions } = collectPayslipPayload();
+    setGenLoading(true);
+    try {
+      const { data } = await api.post('/dispatch/payslip-records', {
+        officer_id: detail.entity_id,
+        client_id: cid,
+        date_from: dateFrom,
+        date_to: dateTo,
+        extra_payments: payloadRows,
+        deductions: payloadDeductions,
+      });
+      toast.success('Payslip generated & saved');
+      await loadSavedRecords();
+      if (data?.id) {
+        window.open(`/api/dispatch/payslip-records/${data.id}/pdf`, '_blank');
+      }
+    } catch (e) {
+      toast.error(formatApiErrorDetail(e.response?.data?.detail) || 'Failed to generate payslip');
+    } finally {
+      setGenLoading(false);
+    }
+  };
+
+  // Open a saved record for modification: pre-fill extra/deduction editors.
+  const openSavedRecord = async (rec) => {
+    try {
+      const { data } = await api.get(`/dispatch/payslip-records/${rec.id}`);
+      setExtraRows((data.extra_payments || []).map((r) => ({
+        date: r.date || '', purpose: r.purpose || '', amount: r.amount != null ? String(r.amount) : '',
+      })));
+      setDeductionRows((data.deductions || []).map((r) => ({
+        date: r.date || '', purpose: r.purpose || '', amount: r.amount != null ? String(r.amount) : '',
+      })));
+      setEditingRecordId(rec.id);
+      toast.success('Loaded saved payslip — edit and regenerate to update');
+    } catch (e) {
+      toast.error(formatApiErrorDetail(e.response?.data?.detail) || 'Failed to open saved payslip');
+    }
+  };
+
+  const deleteSavedRecord = async (rec) => {
+    try {
+      await api.delete(`/dispatch/payslip-records/${rec.id}`);
+      toast.success('Saved payslip deleted');
+      if (editingRecordId === rec.id) setEditingRecordId(null);
+      await loadSavedRecords();
+    } catch (e) {
+      toast.error(formatApiErrorDetail(e.response?.data?.detail) || 'Failed to delete');
+    }
+  };
+
+  const updateScheduleEdit = (id, field, value) =>
+    setScheduleEdits((m) => ({ ...m, [id]: { ...(m[id] || {}), [field]: value } }));
+
+  const dirtyScheduleRows = () => {
+    const items = detail?.data?.items || [];
+    return items.filter((r) => {
+      const e = scheduleEdits[r.id] || {};
+      const origH = r.duty_hours != null ? String(r.duty_hours) : '';
+      const origR = r.hourly_rate != null ? String(r.hourly_rate) : (r.duty_rate != null ? String(r.duty_rate) : '');
+      return (e.duty_hours ?? origH) !== origH || (e.duty_rate ?? origR) !== origR;
+    });
+  };
+
+  const saveScheduleEdits = async () => {
+    const dirty = dirtyScheduleRows();
+    if (dirty.length === 0) { toast('No changes to save'); return; }
+    setSavingEdits(true);
+    try {
+      for (const r of dirty) {
+        const e = scheduleEdits[r.id] || {};
+        const body = {};
+        if (e.duty_hours !== undefined && e.duty_hours !== '') body.duty_hours = Number(e.duty_hours);
+        if (e.duty_rate !== undefined && e.duty_rate !== '') body.duty_rate = Number(e.duty_rate);
+        await api.put(`/dispatch/schedules/${r.id}`, body);
+      }
+      toast.success(`Updated ${dirty.length} shift(s) on the schedule`);
+      await fetchDetail(detail.entity_type, detail.entity_id, clientFilter);
+    } catch (err) {
+      toast.error(formatApiErrorDetail(err.response?.data?.detail) || 'Failed to save shift edits');
+    } finally {
+      setSavingEdits(false);
+    }
+  };
+
+  const downloadAdvanceStatement = async () => {
+    try {
+      const params = { officer_id: detail.entity_id };
+      if (payslipClientId) params.client_id = payslipClientId;
+      const res = await api.get('/dispatch/advance-salary/statement', { params, responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `advance-statement-${detail.entity_name || detail.entity_id}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Advance statement downloaded');
+    } catch (e) {
+      toast.error(formatApiErrorDetail(e.response?.data?.detail) || 'Failed to download statement');
+    }
+  };
+
+  const MIME_BY_FMT = {
+  csv: 'text/csv',
+  pdf: 'application/pdf',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
+
+const downloadEntityDetail = async (fmt, opts = {}) => {
     try {
       const params = {
         entity_type: detail.entity_type,
@@ -185,7 +529,14 @@ const DispatchReportsPage = () => {
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
       toast.success(`${fmt === 'xlsx' ? 'Excel' : fmt.toUpperCase()} downloaded`);
-    } catch (e) { toast.error('Export failed'); }
+    } catch (e) {
+      console.error('Payslip/export failed:', e);
+      toast.error(
+        formatApiErrorDetail(e.response?.data?.detail) ||
+        e.message ||
+        'Export failed'
+      );
+    }
   };
 
   const load = useCallback(async () => {
@@ -313,7 +664,11 @@ const DispatchReportsPage = () => {
                       key={r.id || `${r.officer_id || r.client_id || r.vendor_id || r.post_site_id || i}`}
                       data-testid={`report-row-${i}`}
                       className={clickable ? 'hover:bg-[#F8FAFC] dark:hover:bg-[#0F0F11] cursor-pointer' : ''}
-                      onClick={clickable ? () => openDetail(r) : undefined}
+                      onClick={
+                        clickable
+                          ? () => openDetail(r)
+                          : undefined
+                      }
                     >
                       {cols.map((c, j) => (
                         <td key={c.key} className="px-3 py-2 text-[#334155] dark:text-[#E4E4E7]">
@@ -321,7 +676,9 @@ const DispatchReportsPage = () => {
                             <span className="text-[#4F46E5] hover:underline font-medium inline-flex items-center gap-1">
                               {r[c.key] ?? '—'} <ChevronRight className="w-3 h-3" />
                             </span>
-                          ) : (r[c.key] ?? '—')}
+                          ) : FINANCIAL_KEYS.has(c.key)
+                            ? formatCurrency(r[c.key])
+                            : (r[c.key] ?? '—')}
                         </td>
                       ))}
                       {t.key === 'schedules' && canDelete && (
@@ -348,7 +705,7 @@ const DispatchReportsPage = () => {
       </Tabs>
 
       {/* Entity Detail Dialog — day-by-day breakdown */}
-      <Dialog open={!!detail} onOpenChange={(o) => { if (!o) { setDetail(null); setPickerOpen(false); setClientFilter(''); } }}>
+      <Dialog open={!!detail} onOpenChange={(o) => { if (!o) { setDetail(null); setPickerOpen(false); setClientFilter(''); setExtraRows([]); setDeductionRows([]); setEditingRecordId(null); setSavedRecords([]); } }}>
         <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto" data-testid="entity-detail-dialog">
           <DialogHeader>
             <DialogTitle>
@@ -401,8 +758,8 @@ const DispatchReportsPage = () => {
                       </div>
                       <div className="flex justify-end">
                         {canExport && (
-                          <Button size="sm" onClick={() => setPayslipDialog(true)} data-testid="download-payslip-pdf">
-                            <FileText className="w-4 h-4 mr-2" /> Customize & Download
+                          <Button size="sm" onClick={generatePayslip} disabled={genLoading} data-testid="download-payslip-pdf">
+                            <FileText className="w-4 h-4 mr-2" /> {genLoading ? 'Generating…' : 'Generate Payslip PDF'}
                           </Button>
                         )}
                       </div>
@@ -415,21 +772,235 @@ const DispatchReportsPage = () => {
                   {Object.entries(detail.data.summary || {}).map(([k, v]) => (
                     <div key={k} className="rounded-lg border border-[#E2E8F0] dark:border-[#27272A] p-3">
                       <p className="text-[10px] uppercase tracking-wider text-[#64748B]">{k.replace(/_/g, ' ')}</p>
-                      <p className="text-lg font-bold text-[#0F172A] dark:text-[#FAFAFA]">{v}</p>
+                      <p className="text-lg font-bold text-[#0F172A] dark:text-[#FAFAFA]">
+                        {FINANCIAL_KEYS.has(k) ? formatCurrency(v) : v}
+                      </p>
                     </div>
                   ))}
                 </div>
 
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold">Shifts ({detail.data.count})</h3>
-                  {canExport && (
-                    <div className="flex gap-2">
+                  <div className="flex gap-2">
+                    {isOfficerPayslip && canFinancial && (
+                      <Button size="sm" onClick={saveScheduleEdits} disabled={savingEdits} data-testid="save-shift-edits">
+                        {savingEdits ? 'Saving…' : 'Save Shift Edits'}
+                      </Button>
+                    )}
+                    {canExport && (
                       <Button size="sm" variant="outline" onClick={() => setPickerOpen(true)} data-testid="detail-pick-columns">
                         <Download className="w-4 h-4 mr-2" /> Choose columns & export
                       </Button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
+
+                {/* Advance Salary */}
+                {isOfficerPayslip && canFinancial && (
+                  <div className="rounded-xl border border-[#E2E8F0] dark:border-[#27272A] bg-white dark:bg-[#0F0F11] p-4" data-testid="advance-salary">
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <div>
+                        <h3 className="text-sm font-semibold text-[#0F172A] dark:text-[#FAFAFA]">Advance Salary</h3>
+                        <p className="text-xs text-[#64748B] mt-1">Advances taken and repayments for this officer with this client. Balance carries across payslips.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {canExport && (
+                          <Button type="button" variant="outline" onClick={downloadAdvanceStatement} data-testid="download-advance-statement">
+                            <FileText className="w-4 h-4 mr-2" /> Download Statement
+                          </Button>
+                        )}
+                        {canAdjust && (
+                          <>
+                            <Button type="button" variant="outline" onClick={() => openAdvanceDialog('advance')} data-testid="record-advance-button">Record Advance</Button>
+                            <Button type="button" onClick={() => openAdvanceDialog('repayment')} disabled={Number(advance.remaining_balance || 0) <= 0} data-testid="record-repayment-button">Record Repayment</Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                      <div className="rounded-lg bg-[#F8FAFC] dark:bg-[#18181B] p-3">
+                        <p className="text-[10px] uppercase tracking-wider text-[#64748B]">Total Advanced</p>
+                        <p className="text-base font-bold">{formatCurrency(advance.total_advanced)}</p>
+                      </div>
+                      <div className="rounded-lg bg-[#F8FAFC] dark:bg-[#18181B] p-3">
+                        <p className="text-[10px] uppercase tracking-wider text-[#64748B]">Total Repaid</p>
+                        <p className="text-base font-bold">{formatCurrency(advance.total_repaid)}</p>
+                      </div>
+                      <div className="rounded-lg border-2 border-[#0F172A] dark:border-[#FAFAFA] p-3">
+                        <p className="text-[10px] uppercase tracking-wider text-[#64748B]">Remaining Advance Balance</p>
+                        <p className="text-xl font-bold text-[#0F172A] dark:text-[#FAFAFA]" data-testid="remaining-advance-balance">{formatCurrency(advance.remaining_balance)}</p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-[#E2E8F0] dark:border-[#27272A] overflow-x-auto">
+                      <div className="px-3 py-2 border-b border-[#E2E8F0] dark:border-[#27272A]"><h4 className="text-xs font-semibold">Transaction History</h4></div>
+                      {advLoading ? (
+                        <p className="p-4 text-xs text-[#64748B]">Loading…</p>
+                      ) : advance.entries.length === 0 ? (
+                        <p className="p-4 text-xs text-[#64748B]">No advance transactions recorded.</p>
+                      ) : (
+                        <table className="w-full text-xs min-w-[700px]">
+                          <thead className="bg-[#F8FAFC] dark:bg-[#18181B]">
+                            <tr>
+                              <th className="px-3 py-2 text-left">Date</th>
+                              <th className="px-3 py-2 text-left">Type</th>
+                              <th className="px-3 py-2 text-left">Note</th>
+                              <th className="px-3 py-2 text-right">Amount</th>
+                              <th className="px-3 py-2 text-right">Balance</th>
+                              {canAdjust && <th className="px-3 py-2 text-right">Actions</th>}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#E2E8F0] dark:divide-[#27272A]">
+                            {advance.entries.map((entry) => (
+                              <tr key={entry.id} data-testid={`advance-row-${entry.id}`}>
+                                <td className="px-3 py-2">{entry.entry_date || '—'}</td>
+                                <td className="px-3 py-2 font-semibold">{entry.type === 'advance' ? 'Advance Taken' : 'Repayment'}</td>
+                                <td className="px-3 py-2">{entry.note || '—'}</td>
+                                <td className="px-3 py-2 text-right font-semibold">{formatCurrency(entry.amount)}</td>
+                                <td className="px-3 py-2 text-right font-semibold">{formatCurrency(entry.balance_after)}</td>
+                                {canAdjust && (
+                                  <td className="px-3 py-2 text-right">
+                                    <Button variant="ghost" size="sm" className="text-[#DC2626] hover:text-[#B91C1C] h-7 px-2" onClick={() => deleteAdvanceEntry(entry.id)} data-testid={`delete-advance-${entry.id}`}><Trash2 className="w-3.5 h-3.5" /></Button>
+                                  </td>
+                                )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+
+                    {/* Payslip breakdown */}
+                    <div className="mt-4 rounded-lg border border-[#E2E8F0] dark:border-[#27272A] p-4" data-testid="payslip-breakdown">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">Payslip Summary{editingRecordId ? ' · editing saved record' : ''}</h4>
+                        {canExport && (
+                          <Button size="sm" onClick={generatePayslip} disabled={genLoading} data-testid="generate-payslip">
+                            <FileText className="w-4 h-4 mr-2" />{genLoading ? 'Generating…' : (editingRecordId ? 'Regenerate & Save' : 'Generate & Save Payslip PDF')}
+                          </Button>
+                        )}
+                      </div>
+                      <div className="space-y-2 text-sm max-w-2xl">
+                        <div className="flex items-center justify-between"><span className="text-[#64748B]">Gross Pay</span><span className="font-semibold" data-testid="ps-gross">{formatCurrency(totalAmount)}</span></div>
+
+                        {/* Extra payment rows */}
+                        <div className="pt-1">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[#64748B]">Extra Payments</span>
+                            {canAdjust && (
+                              <Button size="sm" variant="outline" onClick={addExtraRow} data-testid="add-extra-field" className="h-7 px-2 text-xs">
+                                <Plus className="w-3.5 h-3.5 mr-1" /> Add More Fields
+                              </Button>
+                            )}
+                          </div>
+                          {extraRows.length === 0 ? (
+                            <p className="text-xs text-[#94A3B8]">No extra payments. {canAdjust ? 'Click “Add More Fields” to add one.' : ''}</p>
+                          ) : (
+                            <div className="space-y-2" data-testid="extra-payment-rows">
+                              {extraRows.map((row, idx) => (
+                                <div key={idx} className="flex flex-wrap items-center gap-2" data-testid={`extra-row-${idx}`}>
+                                  {canAdjust ? (
+                                    <>
+                                      <Input type="date" value={row.date} onChange={(e) => updateExtraRow(idx, 'date', e.target.value)} className="h-8 w-40" data-testid={`extra-date-${idx}`} />
+                                      <Input type="text" placeholder="Purpose" value={row.purpose} onChange={(e) => updateExtraRow(idx, 'purpose', e.target.value)} className="h-8 flex-1 min-w-[140px]" data-testid={`extra-purpose-${idx}`} />
+                                      <Input type="number" min="0" step="0.01" placeholder="0.00" value={row.amount} onChange={(e) => updateExtraRow(idx, 'amount', e.target.value)} className="h-8 w-28 text-right" data-testid={`extra-amount-${idx}`} />
+                                      <Button variant="ghost" size="sm" className="text-[#DC2626] hover:text-[#B91C1C] h-8 px-2" onClick={() => removeExtraRow(idx)} data-testid={`extra-remove-${idx}`}><Trash2 className="w-3.5 h-3.5" /></Button>
+                                    </>
+                                  ) : (
+                                    <div className="flex w-full items-center justify-between">
+                                      <span className="text-[#64748B]">{row.purpose || 'Extra Payment'}{row.date ? ` (${row.date})` : ''}</span>
+                                      <span className="font-semibold">{formatCurrency(Number(row.amount) || 0)}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between mt-2 text-xs">
+                            <span className="text-[#64748B]">Extra Payments Total</span>
+                            <span className="font-semibold" data-testid="ps-extra-total">{formatCurrency(extraTotal)}</span>
+                          </div>
+                        </div>
+
+                        {/* Manual deduction rows (line items that reduce net pay) */}
+                        <div className="pt-1">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[#64748B]">Deductions</span>
+                            {canAdjust && (
+                              <Button size="sm" variant="outline" onClick={addDeductionRow} data-testid="add-deduction-field" className="h-7 px-2 text-xs">
+                                <Plus className="w-3.5 h-3.5 mr-1" /> Add Deduction
+                              </Button>
+                            )}
+                          </div>
+                          {deductionRows.length === 0 ? (
+                            <p className="text-xs text-[#94A3B8]">No deductions. {canAdjust ? 'Click “Add Deduction” to add one.' : ''}</p>
+                          ) : (
+                            <div className="space-y-2" data-testid="deduction-rows">
+                              {deductionRows.map((row, idx) => (
+                                <div key={idx} className="flex flex-wrap items-center gap-2" data-testid={`deduction-row-${idx}`}>
+                                  {canAdjust ? (
+                                    <>
+                                      <Input type="date" value={row.date} onChange={(e) => updateDeductionRow(idx, 'date', e.target.value)} className="h-8 w-40" data-testid={`deduction-date-${idx}`} />
+                                      <Input type="text" placeholder="Label (e.g. Uniform, Loan)" value={row.purpose} onChange={(e) => updateDeductionRow(idx, 'purpose', e.target.value)} className="h-8 flex-1 min-w-[140px]" data-testid={`deduction-purpose-${idx}`} />
+                                      <Input type="number" min="0" step="0.01" placeholder="0.00" value={row.amount} onChange={(e) => updateDeductionRow(idx, 'amount', e.target.value)} className="h-8 w-28 text-right" data-testid={`deduction-amount-${idx}`} />
+                                      <Button variant="ghost" size="sm" className="text-[#DC2626] hover:text-[#B91C1C] h-8 px-2" onClick={() => removeDeductionRow(idx)} data-testid={`deduction-remove-${idx}`}><Trash2 className="w-3.5 h-3.5" /></Button>
+                                    </>
+                                  ) : (
+                                    <div className="flex w-full items-center justify-between">
+                                      <span className="text-[#64748B]">{row.purpose || 'Deduction'}{row.date ? ` (${row.date})` : ''}</span>
+                                      <span className="font-semibold text-[#DC2626]">-{formatCurrency(Number(row.amount) || 0)}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between mt-2 text-xs">
+                            <span className="text-[#64748B]">Deductions Total</span>
+                            <span className="font-semibold text-[#DC2626]" data-testid="ps-deduction-total">-{formatCurrency(deductionTotal)}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between border-t border-[#E2E8F0] dark:border-[#27272A] pt-2 mt-2"><span className="font-bold text-[#0F172A] dark:text-[#FAFAFA]">Net Payment</span><span className="text-xl font-bold text-[#0F172A] dark:text-[#FAFAFA]" data-testid="ps-net-payment">{formatCurrency(netPayment)}</span></div>
+                        <div className="flex items-center justify-between"><span className="text-[#64748B]">Remaining Advance Balance</span><span className="font-semibold" data-testid="ps-remaining-balance">{formatCurrency(advance.remaining_balance)}</span></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Saved payslip PDF records */}
+                {isOfficerPayslip && (
+                  <div className="rounded-lg border border-[#E2E8F0] dark:border-[#27272A] p-4" data-testid="saved-payslips">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-[#64748B] mb-3">Saved Payslips</h4>
+                    {savedRecords.length === 0 ? (
+                      <p className="text-xs text-[#94A3B8]">No saved payslips yet. Add extra payments / deductions, then click “Generate &amp; Save Payslip PDF”.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {savedRecords.map((rec) => (
+                          <div key={rec.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#E2E8F0] dark:border-[#27272A] px-3 py-2 text-xs" data-testid={`saved-payslip-${rec.id}`}>
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-[#0F172A] dark:text-[#FAFAFA]">{rec.date_from} → {rec.date_to}</span>
+                              <span className="text-[#64748B]">Net {formatCurrency(rec.net_payment)}{rec.generated_at ? ` · ${new Date(rec.generated_at).toLocaleString()}` : ''}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Button size="sm" variant="outline" onClick={() => window.open(`/api/dispatch/payslip-records/${rec.id}/pdf`, '_blank')} data-testid={`preview-payslip-${rec.id}`}>
+                                <FileText className="w-3.5 h-3.5 mr-1" /> Preview / Download
+                              </Button>
+                              {canAdjust && (
+                                <Button size="sm" variant="outline" onClick={() => openSavedRecord(rec)} data-testid={`modify-payslip-${rec.id}`}>Modify</Button>
+                              )}
+                              {canExport && (
+                                <Button size="sm" variant="ghost" className="text-[#DC2626] hover:text-[#B91C1C]" onClick={() => deleteSavedRecord(rec)} data-testid={`delete-payslip-${rec.id}`}><Trash2 className="w-3.5 h-3.5" /></Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
 
                 {/* Payslip-style table when we can identify one client for the officer */}
                 {isOfficerPayslip ? (
@@ -457,9 +1028,17 @@ const DispatchReportsPage = () => {
                             <td className="px-2 py-2">{r.shift_type || '—'}</td>
                             <td className="px-2 py-2 font-mono">{r.start_time || '—'}</td>
                             <td className="px-2 py-2 font-mono">{r.end_time || '—'}</td>
-                            <td className="px-2 py-2 text-right">{r.duty_hours ?? '—'}</td>
-                            {canFinancial && <td className="px-2 py-2 text-right">{r.hourly_rate != null ? `$${Number(r.hourly_rate).toFixed(2)}` : '—'}</td>}
-                            {canFinancial && <td className="px-2 py-2 text-right font-semibold">{r.total != null ? `$${Number(r.total).toFixed(2)}` : '—'}</td>}
+                            <td className="px-2 py-2 text-right">
+                              {canFinancial ? (
+                                <Input type="number" min="0" step="0.01" value={(scheduleEdits[r.id]?.duty_hours) ?? (r.duty_hours ?? '')} onChange={(e) => updateScheduleEdit(r.id, 'duty_hours', e.target.value)} className="h-7 w-20 text-right ml-auto" data-testid={`edit-hours-${r.id}`} />
+                              ) : (r.duty_hours ?? '—')}
+                            </td>
+                            {canFinancial && (
+                              <td className="px-2 py-2 text-right">
+                                <Input type="number" min="0" step="0.01" value={(scheduleEdits[r.id]?.duty_rate) ?? (r.hourly_rate ?? '')} onChange={(e) => updateScheduleEdit(r.id, 'duty_rate', e.target.value)} className="h-7 w-24 text-right ml-auto" data-testid={`edit-rate-${r.id}`} />
+                              </td>
+                            )}
+                            {canFinancial && <td className="px-2 py-2 text-right font-semibold" data-testid={`row-total-${r.id}`}>${((Number(scheduleEdits[r.id]?.duty_hours ?? r.duty_hours ?? 0)) * (Number(scheduleEdits[r.id]?.duty_rate ?? r.hourly_rate ?? 0))).toFixed(2)}</td>}
                             <td className="px-2 py-2">{r.post_site_name || '—'}</td>
                             <td className="px-2 py-2">{r.city || '—'}</td>
                             <td className="px-2 py-2 text-[#DC2626] font-semibold">{formatPin(r) || '—'}</td>
@@ -523,8 +1102,8 @@ const DispatchReportsPage = () => {
                             <td className="px-2 py-2">{r.shift_status}</td>
                             <td className="px-2 py-2 max-w-[220px] truncate" title={r.remarks || ''}>{r.remarks || '—'}</td>
                             {canFinancial && <>
-                              <td className="px-2 py-2">{r.duty_rate ?? '—'}</td>
-                              <td className="px-2 py-2">{r.billing_rate ?? '—'}</td>
+                              <td className="px-2 py-2">{formatCurrency(r.duty_rate)}</td>
+                              <td className="px-2 py-2">{formatCurrency(r.billing_rate)}</td>
                               <td className="px-2 py-2">{r.work_order_number ?? '—'}</td>
                             </>}
                           </tr>
@@ -550,22 +1129,6 @@ const DispatchReportsPage = () => {
         onChange={setPickedCols}
         onExport={(fmt) => { downloadEntityDetail(fmt, { columns: pickedCols.join(',') || undefined }); setPickerOpen(false); }}
       />
-
-      {/* Payslip customization dialog */}
-      {payslipDialog && detail && isOfficerPayslip && (
-        <PayslipCustomizeDialog
-          open={payslipDialog}
-          onClose={() => setPayslipDialog(false)}
-          officerId={detail.entity_id}
-          officerName={detail.entity_name}
-          clientId={clientFilter}
-          clientName={detail.data?.client_info?.name}
-          dateFrom={dateFrom}
-          dateTo={dateTo}
-          subtotal={Number(detail.data?.summary?.total_amount || 0)}
-          shifts={detail.data?.items || []}
-        />
-      )}
 
       {/* Delete confirmation dialog */}
       <Dialog open={!!pendingDelete} onOpenChange={(o) => !o && !deleting && setPendingDelete(null)}>
@@ -595,6 +1158,97 @@ const DispatchReportsPage = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Record Advance / Repayment Dialog */}
+      <Dialog
+        open={!!advDialog}
+        onOpenChange={(open) => { if (!open) closeAdvanceDialog(); }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {advDialog === 'advance' ? 'Record Advance' : 'Record Repayment'}
+            </DialogTitle>
+            <DialogDescription>
+              {advDialog === 'advance'
+                ? 'Record an advance salary taken by this officer.'
+                : "Record a repayment against the officer's outstanding advance balance."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Date</Label>
+              <Input
+                type="date"
+                value={advDate}
+                onChange={(e) => setAdvDate(e.target.value)}
+                className="mt-1"
+                disabled={advSaving}
+                data-testid="advance-date"
+              />
+            </div>
+
+            <div>
+              <Label>Amount</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={advAmount}
+                onChange={(e) => setAdvAmount(e.target.value)}
+                placeholder="0.00"
+                className="mt-1"
+                disabled={advSaving}
+                data-testid="advance-amount"
+              />
+            </div>
+
+            <div>
+              <Label>Note (optional)</Label>
+              <Input
+                value={advNote}
+                onChange={(e) => setAdvNote(e.target.value)}
+                placeholder="e.g. cash advance"
+                className="mt-1"
+                disabled={advSaving}
+                data-testid="advance-note"
+              />
+            </div>
+
+            {advDialog === 'repayment' && (
+              <div className="rounded-lg bg-[#F8FAFC] dark:bg-[#18181B] p-3 text-xs">
+                <span className="text-[#64748B]">Remaining balance:</span>{' '}
+                <strong>{formatCurrency(advance.remaining_balance)}</strong>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={closeAdvanceDialog}
+              disabled={advSaving}
+            >
+              Cancel
+            </Button>
+
+            <Button
+              type="button"
+              onClick={saveAdvance}
+              disabled={advSaving}
+              data-testid="save-advance-entry"
+            >
+              {advSaving
+                ? 'Saving…'
+                : advDialog === 'advance'
+                  ? 'Save Advance'
+                  : 'Save Repayment'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
@@ -617,239 +1271,6 @@ const ENTITY_EXPORT_COLS_FIN = [
   { key: 'billing_rate', label: 'Billing Rate' },
   { key: 'work_order_number', label: 'Work Order' },
 ];
-
-const PayslipCustomizeDialog = ({
-  open, onClose,
-  officerId, officerName,
-  clientId, clientName,
-  dateFrom, dateTo,
-  subtotal, shifts,
-}) => {
-  const [extras, setExtras] = useState([]);
-  const [advance, setAdvance] = useState('');
-  const [prevBalance, setPrevBalance] = useState(0);
-  const [downloading, setDownloading] = useState(false);
-  const [loadingBalance, setLoadingBalance] = useState(false);
-
-  // Load unused-advance carried from the last payslip
-  useEffect(() => {
-    if (!open || !officerId) return;
-    let alive = true;
-    setLoadingBalance(true);
-    (async () => {
-      try {
-        const { data } = await api.get('/dispatch/reports/advance-balance', {
-          params: { officer_id: officerId, client_id: clientId || undefined },
-        });
-        if (!alive) return;
-        const bal = Number(data?.balance || 0);
-        setPrevBalance(bal);
-        if (bal > 0) setAdvance(String(bal));
-      } catch { /* silent */ }
-      finally { if (alive) setLoadingBalance(false); }
-    })();
-    return () => { alive = false; };
-  }, [open, officerId, clientId]);
-
-  const extrasTotal = extras.reduce((s, e) => s + (Number(e.amount) || 0), 0);
-  const gross = subtotal + extrasTotal;
-  const advanceNum = Math.max(0, Number(advance) || 0);
-  const applied = Math.min(advanceNum, gross);
-  const carryForward = Math.max(0, advanceNum - gross);
-  const netPayable = Math.max(0, gross - applied);
-
-  const addExtra = () => setExtras([...extras, { label: '', amount: '' }]);
-  const removeExtra = (i) => setExtras(extras.filter((_, idx) => idx !== i));
-  const updateExtra = (i, key, val) => {
-    setExtras(extras.map((e, idx) => (idx === i ? { ...e, [key]: val } : e)));
-  };
-
-  const download = async () => {
-    setDownloading(true);
-    try {
-      const payload = {
-        entity_id: officerId,
-        date_from: dateFrom, date_to: dateTo,
-        client_id: clientId || null,
-        advance_amount: advanceNum,
-        extras: extras
-          .filter((e) => (e.label || '').trim() || Number(e.amount) > 0)
-          .map((e) => ({
-            label: (e.label || 'Extra').trim() || 'Extra',
-            amount: Number(e.amount) || 0,
-          })),
-        commit_carryforward: true,
-      };
-      const res = await api.post(
-        '/dispatch/reports/export/entity-detail/payslip',
-        payload,
-        { responseType: 'blob' },
-      );
-      const blob = new Blob([res.data], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `payslip-${officerName}-${dateFrom}-${dateTo}.pdf`;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Payslip downloaded');
-      onClose();
-    } catch (e) {
-      toast.error('Failed to generate payslip');
-    } finally { setDownloading(false); }
-  };
-
-  const money = (n) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && !downloading && onClose()}>
-      <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto" data-testid="payslip-customize-dialog">
-        <DialogHeader>
-          <DialogTitle>Customize payslip · {officerName}</DialogTitle>
-          <DialogDescription>
-            Review the shifts, add extras or an advance deduction, then download the PDF.
-            {clientName ? ` Client: ${clientName}.` : ''}
-          </DialogDescription>
-        </DialogHeader>
-
-        {/* Shifts review (read-only) */}
-        <div className="border border-[#E2E8F0] dark:border-[#27272A] rounded-lg overflow-x-auto">
-          <table className="w-full text-xs" data-testid="payslip-shifts-table">
-            <thead className="bg-[#F8FAFC] dark:bg-[#0F0F11] text-[#64748B] uppercase tracking-wider">
-              <tr>
-                <th className="px-2 py-2 text-left">Date</th>
-                <th className="px-2 py-2 text-left">Shift</th>
-                <th className="px-2 py-2 text-right">Hours</th>
-                <th className="px-2 py-2 text-right">Rate</th>
-                <th className="px-2 py-2 text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E2E8F0] dark:divide-[#27272A]">
-              {shifts.length === 0 ? (
-                <tr><td colSpan={5} className="px-3 py-4 text-center text-[#64748B]">No shifts in this period</td></tr>
-              ) : shifts.map((r) => (
-                <tr key={r.id}>
-                  <td className="px-2 py-1.5">{r.date}</td>
-                  <td className="px-2 py-1.5">{r.shift_type || '—'}</td>
-                  <td className="px-2 py-1.5 text-right">{r.duty_hours ?? '—'}</td>
-                  <td className="px-2 py-1.5 text-right">{r.hourly_rate != null ? money(r.hourly_rate) : '—'}</td>
-                  <td className="px-2 py-1.5 text-right font-semibold">{r.total != null ? money(r.total) : '—'}</td>
-                </tr>
-              ))}
-              <tr className="bg-[#F8FAFC] dark:bg-[#0F0F11] font-semibold">
-                <td className="px-2 py-2" colSpan={4}>Subtotal</td>
-                <td className="px-2 py-2 text-right" data-testid="payslip-subtotal">{money(subtotal)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        {/* Extras */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold">Extra Payments (+)</h4>
-            <Button size="sm" variant="outline" onClick={addExtra} data-testid="payslip-add-extra">
-              <Plus className="w-4 h-4 mr-1" /> Add extra
-            </Button>
-          </div>
-          {extras.length === 0 ? (
-            <p className="text-xs text-[#64748B]">Add hotel fee, parking fee, or any other custom charge that increases the payout.</p>
-          ) : (
-            <div className="space-y-2">
-              {extras.map((e, i) => (
-                <div key={i} className="grid grid-cols-[1fr_140px_36px] gap-2 items-center" data-testid={`payslip-extra-row-${i}`}>
-                  <Input
-                    placeholder="Label (e.g. Hotel Fee)"
-                    value={e.label}
-                    onChange={(ev) => updateExtra(i, 'label', ev.target.value)}
-                    data-testid={`payslip-extra-label-${i}`}
-                  />
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={e.amount}
-                    onChange={(ev) => updateExtra(i, 'amount', ev.target.value)}
-                    className="text-right"
-                    data-testid={`payslip-extra-amount-${i}`}
-                  />
-                  <Button
-                    variant="ghost" size="icon"
-                    onClick={() => removeExtra(i)}
-                    className="text-[#DC2626] hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                    aria-label="Remove extra"
-                    data-testid={`payslip-remove-extra-${i}`}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Advance / Adjustment */}
-        <div className="space-y-2">
-          <h4 className="text-sm font-semibold">Advance / Adjustment (−)</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
-            <div>
-              <Label className="text-xs">Amount to deduct this period</Label>
-              <Input
-                type="number" step="0.01" min="0"
-                placeholder="0.00"
-                value={advance}
-                onChange={(e) => setAdvance(e.target.value)}
-                data-testid="payslip-advance-input"
-              />
-              {prevBalance > 0 && (
-                <p className="text-xs text-[#B45309] mt-1" data-testid="payslip-prev-balance">
-                  Carried forward from last period: {money(prevBalance)} (prefilled — edit as needed)
-                </p>
-              )}
-              {loadingBalance && <p className="text-xs text-[#64748B] mt-1">Checking previous balance…</p>}
-            </div>
-            <p className="text-xs text-[#64748B] pt-6">
-              Any amount larger than the net total carries forward to the next payslip automatically.
-            </p>
-          </div>
-        </div>
-
-        {/* Summary */}
-        <div className="rounded-xl border border-[#E2E8F0] dark:border-[#27272A] bg-[#F8FAFC] dark:bg-[#0F0F11] p-4 space-y-1">
-          <div className="flex justify-between text-sm"><span>Subtotal</span><span data-testid="payslip-summary-subtotal">{money(subtotal)}</span></div>
-          {extras.length > 0 && (
-            <div className="flex justify-between text-sm text-[#059669]"><span>+ Extras</span><span data-testid="payslip-summary-extras">{money(extrasTotal)}</span></div>
-          )}
-          {advanceNum > 0 && (
-            <div className="flex justify-between text-sm text-[#DC2626]">
-              <span>− Advance applied</span>
-              <span data-testid="payslip-summary-advance">-{money(applied)}</span>
-            </div>
-          )}
-          <div className="flex justify-between text-base font-bold border-t border-[#E2E8F0] dark:border-[#27272A] pt-2">
-            <span>Net Payable</span>
-            <span data-testid="payslip-summary-net">{money(netPayable)}</span>
-          </div>
-          {carryForward > 0 && (
-            <div className="flex justify-between text-xs text-[#B45309]">
-              <span>Unused advance → next period</span>
-              <span data-testid="payslip-summary-carry">{money(carryForward)}</span>
-            </div>
-          )}
-        </div>
-
-        <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={onClose} disabled={downloading} data-testid="payslip-cancel-btn">Cancel</Button>
-          <Button onClick={download} disabled={downloading} className="bg-[#4F46E5] hover:bg-[#4338CA] text-white" data-testid="payslip-download-btn">
-            <FileText className="w-4 h-4 mr-2" />
-            {downloading ? 'Generating…' : 'Download PDF'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-};
 
 const ColumnPickerDialog = ({ open, onClose, canFinancial, picked, onChange, onExport }) => {
   const all = canFinancial ? [...ENTITY_EXPORT_COLS, ...ENTITY_EXPORT_COLS_FIN] : ENTITY_EXPORT_COLS;

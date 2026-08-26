@@ -1,6 +1,6 @@
 """Dispatch module models — all Pydantic schemas for the Dispatch System."""
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List, Literal
+from typing import Optional, List
 from datetime import datetime
 
 # ---------- Client ----------
@@ -80,7 +80,6 @@ class OfficerBase(BaseModel):
     contact_number: str  # required
     alternate_contact_number: Optional[str] = None
     address: Optional[str] = None
-    social_security_code: Optional[str] = None
     email: Optional[EmailStr] = None
     client_id: str  # Security Officer must belong to a Client
     type: str = "Unarmed"
@@ -100,7 +99,6 @@ class OfficerUpdate(BaseModel):
     contact_number: Optional[str] = None
     alternate_contact_number: Optional[str] = None
     address: Optional[str] = None
-    social_security_code: Optional[str] = None
     email: Optional[EmailStr] = None
     client_id: Optional[str] = None
     type: Optional[str] = None
@@ -116,7 +114,6 @@ class PostSiteBase(BaseModel):
     vendor_id: Optional[str] = None
     location: str = Field(min_length=1)
     city: Optional[str] = None
-    type: Literal["Armed", "Unarmed"] = "Unarmed"
     status: str = "active"
     notes: Optional[str] = None
 
@@ -128,7 +125,6 @@ class PostSiteUpdate(BaseModel):
     vendor_id: Optional[str] = None
     location: Optional[str] = None
     city: Optional[str] = None
-    type: Optional[Literal["Armed", "Unarmed"]] = None
     status: Optional[str] = None
     notes: Optional[str] = None
 
@@ -188,9 +184,6 @@ class ScheduleUpdate(BaseModel):
     vendor_id: Optional[str] = None
     post_site_id: Optional[str] = None
     officer_id: Optional[str] = None
-    # Direct override of duty hours (from the payslip editor). When provided it
-    # takes precedence over auto-computing hours from start/end time.
-    duty_hours: Optional[float] = None
     duty_rate: Optional[float] = None
     billing_rate: Optional[float] = None
     work_order_number: Optional[str] = None
@@ -246,20 +239,3 @@ class DispatchInvoiceCreate(BaseModel):
     # screen) instead of re-aggregating schedules. Totals are recomputed
     # server-side so amount_in_words stays in sync.
     lines: Optional[List[InvoiceLine]] = None
-
-
-
-# ---------- Payslip records (saved generated payslips) ----------
-class PayslipLine(BaseModel):
-    date: Optional[str] = None
-    purpose: Optional[str] = None
-    amount: Optional[float] = 0
-
-
-class PayslipRecordCreate(BaseModel):
-    officer_id: str
-    client_id: str
-    date_from: str
-    date_to: str
-    extra_payments: Optional[List[PayslipLine]] = None
-    deductions: Optional[List[PayslipLine]] = None

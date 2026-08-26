@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { FileText, Download, Eye, Plus, Trash2, X } from 'lucide-react';
+import { FileText, Download, Eye, Plus, Trash2, X, Search, RotateCcw, Pencil } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';
@@ -49,6 +49,19 @@ const DispatchInvoicesPage = () => {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // Invoice list filters
+  const [invoiceFilters, setInvoiceFilters] = useState({
+    date_from: '',
+    date_to: '',
+    client_id: '',
+    vendor_id: '',
+    post_site_id: '',
+    invoice_number: '',
+  });
+
+  const [postSiteOptions, setPostSiteOptions] = useState([]);
+  const [filterLoading, setFilterLoading] = useState(false);
+
   const [clients, setClients] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -59,21 +72,67 @@ const DispatchInvoicesPage = () => {
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [previewPdf, setPreviewPdf] = useState(null); // { url, invoice_number }
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (filters) => {
     setLoading(true);
     try {
-      const { data } = await api.get('/dispatch/invoices');
+      const params = {};
+
+      if (filters.date_from) params.date_from = filters.date_from;
+      if (filters.date_to) params.date_to = filters.date_to;
+      if (filters.client_id) params.client_id = filters.client_id;
+      if (filters.vendor_id) params.vendor_id = filters.vendor_id;
+      if (filters.post_site_id) params.post_site_id = filters.post_site_id;
+      if (filters.invoice_number?.trim()) {
+        params.invoice_number = filters.invoice_number.trim();
+      }
+
+      const { data } = await api.get('/dispatch/invoices', { params });
       setInvoices(data.items || []);
-    } catch (e) { toast.error(formatApiErrorDetail(e.response?.data?.detail)); }
-    finally { setLoading(false); }
+    } catch (e) {
+      toast.error(formatApiErrorDetail(e.response?.data?.detail));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    load();
     api.get('/dispatch/clients').then((r) => setClients(r.data)).catch(() => {});
     api.get('/dispatch/vendors').then((r) => setVendors(r.data)).catch(() => {});
-  }, [load]);
+
+    // Load post-site options for the invoice list filter.
+    api.get('/dispatch/invoices/locations')
+      .then((r) => setPostSiteOptions(r.data || []))
+      .catch(() => {});
+  }, []);
+
+  // Server-side invoice filtering.
+  // Non-search filters react immediately; invoice number is debounced
+  // to provide AJAX-style searching without a request on every keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      load(invoiceFilters);
+    }, invoiceFilters.invoice_number ? 300 : 0);
+
+    return () => clearTimeout(timer);
+  }, [invoiceFilters, load]);
+
+  const updateInvoiceFilter = (key, value) => {
+    setInvoiceFilters((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const resetInvoiceFilters = () => {
+    setInvoiceFilters({
+      date_from: '',
+      date_to: '',
+      client_id: '',
+      vendor_id: '',
+      post_site_id: '',
+      invoice_number: '',
+    });
+  };
 
   // Locations are schedule-backed: refresh them whenever the billing period,
   // Client, or Vendor changes, and clear a selection that is no longer valid.
@@ -170,8 +229,37 @@ const DispatchInvoicesPage = () => {
       billing_period_from: from.toISOString().slice(0, 10),
       billing_period_to: to.toISOString().slice(0, 10),
     });
+    setEditingId(null);
     setPreview(null);
     setDialogOpen(true);
+  };
+
+  const openEditDialog = (inv) => {
+    setEditingId(inv.id);
+    setForm({
+      client_id: inv.client_id || '',
+      vendor_id: inv.vendor_id || '',
+      post_site_ids: inv.post_site_ids || (inv.post_site_id ? [inv.post_site_id] : []),
+      invoice_number: inv.invoice_number || '',
+      invoice_date: inv.invoice_date || new Date().toISOString().slice(0, 10),
+      billing_period_from: inv.billing_period_from || '',
+      billing_period_to: inv.billing_period_to || '',
+      notes: inv.notes || '',
+      lines: (inv.lines || []).map((l) => ({ ...l })),
+    });
+    // Seed the preview panel so the editable line grid shows immediately.
+    setPreview({ client: inv.client_snapshot, vendor: inv.vendor_snapshot });
+    setDialogOpen(true);
+  };
+
+  const previewInvoice = async (inv) => {
+    try {
+      const res = await api.get(`/dispatch/invoices/${inv.id}/pdf`, {
+        params: { inline: true }, responseType: 'blob',
+      });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      setPreviewPdf({ url, invoice_number: inv.invoice_number });
+    } catch (e) { toast.error('Preview failed'); }
   };
 
   const downloadPreviewPdf = async () => {
@@ -185,18 +273,49 @@ const DispatchInvoicesPage = () => {
   const saveInvoice = async () => {
     if (!canPreview) return;
     setSaving(true);
+
     try {
-      const { data } = await api.post('/dispatch/invoices', form);
-      toast.success(`Invoice #${data.invoice_number} saved`);
-      // Immediately download the freshly saved PDF for the user
-      const res = await api.get(`/dispatch/invoices/${data.id}/pdf`, { responseType: 'blob' });
-      _saveBlob(res.data, `Invoice-${data.invoice_number}.pdf`);
+      // Step 1: Create or update the invoice.
+      const { data } = editingId
+        ? await api.put(`/dispatch/invoices/${editingId}`, form)
+        : await api.post('/dispatch/invoices', form);
+
+      toast.success(`Invoice #${data.invoice_number} ${editingId ? 'updated' : 'saved'}`);
+
+      // Close/reset the dialog immediately after successful creation.
+      // This prevents a PDF or refresh problem from making a successful
+      // invoice creation look like a failed operation.
       setDialogOpen(false);
       setForm(emptyForm);
       setPreview(null);
-      await load();
-    } catch (e) { toast.error(formatApiErrorDetail(e.response?.data?.detail)); }
-    finally { setSaving(false); }
+      setEditingId(null);
+
+      // Step 2: Download the freshly saved PDF.
+      // PDF download is secondary to invoice creation, so don't report
+      // the whole save operation as failed if this part has a problem.
+      try {
+        const res = await api.get(`/dispatch/invoices/${data.id}/pdf`, {
+          responseType: 'blob',
+        });
+        _saveBlob(res.data, `Invoice-${data.invoice_number}.pdf`);
+      } catch (_) {
+        toast.error('Invoice was saved, but PDF download failed.');
+      }
+
+      // Step 3: Refresh the invoice list in the background.
+      // The invoice has already been successfully created, so a refresh
+      // problem must not show a false "something went wrong" message.
+      try {
+        await load(invoiceFilters);
+      } catch (_) {
+        // Ignore refresh errors after successful invoice creation.
+      }
+    } catch (e) {
+      // This catch is only for the actual invoice creation request.
+      toast.error(formatApiErrorDetail(e.response?.data?.detail));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const downloadSaved = async (inv) => {
@@ -208,11 +327,28 @@ const DispatchInvoicesPage = () => {
 
   const removeInvoice = async (inv) => {
     if (!window.confirm(`Permanently delete Invoice #${inv.invoice_number}?`)) return;
+
     try {
+      // Delete from the backend first.
       await api.delete(`/dispatch/invoices/${inv.id}`);
+
+      // Immediately remove the successfully deleted invoice from the UI.
+      // This prevents a successful DELETE from being shown as an error
+      // if the subsequent background refresh has a temporary problem.
+      setInvoices((prev) => prev.filter((item) => item.id !== inv.id));
+
       toast.success('Invoice deleted');
-      await load();
-    } catch (e) { toast.error(formatApiErrorDetail(e.response?.data?.detail)); }
+
+      // Refresh the list in the background. Do not show a second/error
+      // toast here because the DELETE operation already succeeded.
+      try {
+        await load(invoiceFilters);
+      } catch (_) {
+        // Ignore refresh errors after a successful deletion.
+      }
+    } catch (e) {
+      toast.error(formatApiErrorDetail(e.response?.data?.detail));
+    }
   };
 
   const clientMap = useMemo(() => Object.fromEntries(clients.map((c) => [c.id, c])), [clients]);
@@ -228,6 +364,136 @@ const DispatchInvoicesPage = () => {
         <Button onClick={openDialog} className="bg-[#4F46E5] hover:bg-[#4338CA]" data-testid="generate-invoice-btn">
           <Plus className="w-4 h-4 mr-2" /> Generate Invoice
         </Button>
+      </div>
+
+      {/* Invoice filters */}
+      <div
+        className="bg-white dark:bg-[#18181B] border border-[#E2E8F0] dark:border-[#27272A] rounded-xl p-4"
+        data-testid="invoice-filters"
+      >
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-sm font-semibold text-[#0F172A] dark:text-[#FAFAFA]">
+              Filter Invoices
+            </h2>
+            <p className="text-xs text-[#64748B] mt-0.5">
+              Search and filter saved invoices without reloading the page.
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={resetInvoiceFilters}
+            data-testid="invoice-reset-filters"
+          >
+            <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+            Reset Filters
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+          <div>
+            <Label className="text-xs">Invoice Date From</Label>
+            <Input
+              type="date"
+              value={invoiceFilters.date_from}
+              onChange={(e) => updateInvoiceFilter('date_from', e.target.value)}
+              data-testid="invoice-filter-date-from"
+            />
+          </div>
+
+          <div>
+            <Label className="text-xs">Invoice Date To</Label>
+            <Input
+              type="date"
+              value={invoiceFilters.date_to}
+              onChange={(e) => updateInvoiceFilter('date_to', e.target.value)}
+              data-testid="invoice-filter-date-to"
+            />
+          </div>
+
+          <div>
+            <Label className="text-xs">Client</Label>
+            <Select
+              value={invoiceFilters.client_id || 'all'}
+              onValueChange={(v) => updateInvoiceFilter('client_id', v === 'all' ? '' : v)}
+            >
+              <SelectTrigger data-testid="invoice-filter-client">
+                <SelectValue placeholder="All Clients" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Clients</SelectItem>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label className="text-xs">Vendor</Label>
+            <Select
+              value={invoiceFilters.vendor_id || 'all'}
+              onValueChange={(v) => updateInvoiceFilter('vendor_id', v === 'all' ? '' : v)}
+            >
+              <SelectTrigger data-testid="invoice-filter-vendor">
+                <SelectValue placeholder="All Vendors" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Vendors</SelectItem>
+                {vendors.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label className="text-xs">Post Site</Label>
+            <Select
+              value={invoiceFilters.post_site_id || 'all'}
+              onValueChange={(v) => updateInvoiceFilter('post_site_id', v === 'all' ? '' : v)}
+            >
+              <SelectTrigger data-testid="invoice-filter-post-site">
+                <SelectValue placeholder="All Post Sites" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Post Sites</SelectItem>
+                {postSiteOptions.map((site) => (
+                  <SelectItem key={site.id} value={site.id}>
+                    {site.name || site.location || site.city || site.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label className="text-xs">Invoice Number</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+              <Input
+                value={invoiceFilters.invoice_number}
+                onChange={(e) => updateInvoiceFilter('invoice_number', e.target.value)}
+                placeholder="Search invoice #..."
+                className="pl-9"
+                autoComplete="off"
+                data-testid="invoice-filter-number"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between mt-3 text-xs text-[#64748B]">
+          <span>
+            {invoiceFilters.invoice_number
+              ? 'Searching invoice numbers…'
+              : `${invoices.length} invoice${invoices.length === 1 ? '' : 's'} shown`}
+          </span>
+          {loading && <span>Updating results…</span>}
+        </div>
       </div>
 
       <div className="bg-white dark:bg-[#18181B] border border-[#E2E8F0] dark:border-[#27272A] rounded-xl overflow-hidden">
@@ -258,7 +524,13 @@ const DispatchInvoicesPage = () => {
                 <td className="px-3 py-2 text-xs text-[#64748B]">{inv.billing_period_from} → {inv.billing_period_to}</td>
                 <td className="px-3 py-2 text-right">{Number(inv.total_hours || 0).toFixed(2)}</td>
                 <td className="px-3 py-2 text-right font-semibold">${Number(inv.total_amount || 0).toFixed(2)}</td>
-                <td className="px-3 py-2 text-right space-x-2">
+                <td className="px-3 py-2 text-right space-x-2 whitespace-nowrap">
+                  <Button size="sm" variant="outline" onClick={() => previewInvoice(inv)} data-testid={`invoice-preview-${inv.id}`}>
+                    <Eye className="w-4 h-4 mr-1" /> Preview
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => openEditDialog(inv)} data-testid={`invoice-edit-${inv.id}`}>
+                    <Pencil className="w-4 h-4 mr-1" /> Edit
+                  </Button>
                   <Button size="sm" variant="outline" onClick={() => downloadSaved(inv)} data-testid={`invoice-download-${inv.id}`}>
                     <Download className="w-4 h-4 mr-1" /> PDF
                   </Button>
@@ -276,7 +548,7 @@ const DispatchInvoicesPage = () => {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto" data-testid="generate-invoice-dialog">
           <DialogHeader>
-            <DialogTitle>Generate Invoice</DialogTitle>
+            <DialogTitle>{editingId ? 'Edit Invoice' : 'Generate Invoice'}</DialogTitle>
             <DialogDescription>
               Pick a Client and Vendor, set the billing period, then Preview to customise every line — dates, locations, hours and rates — before you save or download the invoice.
             </DialogDescription>
@@ -377,7 +649,7 @@ const DispatchInvoicesPage = () => {
             </Button>
             <div className="flex-1" />
             <Button onClick={saveInvoice} disabled={!canPreview || saving} className="bg-[#4F46E5] hover:bg-[#4338CA]" data-testid="inv-save-btn">
-              <FileText className="w-4 h-4 mr-2" />{saving ? 'Saving…' : 'Save & Download'}
+              <FileText className="w-4 h-4 mr-2" />{saving ? 'Saving…' : (editingId ? 'Update & Download' : 'Save & Download')}
             </Button>
           </div>
 
@@ -527,6 +799,32 @@ const DispatchInvoicesPage = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}><X className="w-4 h-4 mr-2" /> Close</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Preview invoice PDF on screen */}
+      <Dialog
+        open={!!previewPdf}
+        onOpenChange={(o) => {
+          if (!o) {
+            if (previewPdf?.url) URL.revokeObjectURL(previewPdf.url);
+            setPreviewPdf(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-5xl max-h-[92vh] overflow-hidden" data-testid="invoice-preview-dialog">
+          <DialogHeader>
+            <DialogTitle>Invoice #{previewPdf?.invoice_number} — Preview</DialogTitle>
+            <DialogDescription>Viewing the invoice PDF on screen. Use the PDF button in the list to download a copy.</DialogDescription>
+          </DialogHeader>
+          {previewPdf && (
+            <iframe
+              title="invoice-pdf-preview"
+              src={previewPdf.url}
+              className="w-full h-[70vh] rounded border border-[#E2E8F0] dark:border-[#27272A]"
+              data-testid="invoice-preview-frame"
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>

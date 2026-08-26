@@ -31,6 +31,7 @@ import DispatchCalendarPage from "@/pages/dashboard/dispatch/DispatchCalendarPag
 import DispatchReportsPage from "@/pages/dashboard/dispatch/DispatchReportsPage";
 import DispatchAuditPage from "@/pages/dashboard/dispatch/DispatchAuditPage";
 import DispatchInvoicesPage from "@/pages/dashboard/dispatch/DispatchInvoicesPage";
+import PaymentSOPage from "@/pages/dashboard/dispatch/PaymentSOPage";
 import { ClientsPage, VendorsPage, OfficersPage, PostSitesPage } from "@/pages/dashboard/dispatch/EntityPages";
 import "@/App.css";
 
@@ -78,6 +79,7 @@ function App() {
             <Route path="dispatch/calendar" element={<DispatchCalendarPage />} />
             <Route path="dispatch/reports" element={<DispatchReportsPage />} />
             <Route path="dispatch/invoices" element={<DispatchInvoicesPage />} />
+            <Route path="dispatch/payment-so" element={<PaymentSOPage />} />
             <Route path="dispatch/audit" element={<DispatchAuditPage />} />
             <Route path="dispatch/clients" element={<ClientsPage />} />
             <Route path="dispatch/vendors" element={<VendorsPage />} />

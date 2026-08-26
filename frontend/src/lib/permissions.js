@@ -69,6 +69,7 @@ export const PERMISSION_GROUPS = [
     key: 'financial', label: 'Financial',
     perms: [
       { code: 'dispatch.financial.view', label: 'View Duty Rate / Billing Rate / Work Order' },
+      { code: 'dispatch.financial.adjust', label: 'Adjust Payslip (Advance / Addition / Deduction)' },
       { code: 'dispatch.billing.view', label: 'View Billing Reports' },
     ],
   },
