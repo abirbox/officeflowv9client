@@ -921,7 +921,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
             : rows.map((r, index) => {
               const rowBgClass = SHIFT_ROW_BG[r.shift_type] || DEFAULT_ROW_BG;
               const previousRow = index > 0 ? rows[index - 1] : null;
-              const dateChanged = previousRow && previousRow.date !== r.date;
+              const dateChanged = !previousRow || previousRow.date !== r.date;
               // Sticky cells must repaint the row-bg colour or the columns
               // beneath them would bleed through while scrolling.
               const stickyLastTd = `sticky right-0 z-10 ${rowBgClass}`;
