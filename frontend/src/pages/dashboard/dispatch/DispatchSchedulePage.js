@@ -1081,9 +1081,14 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
                     >
                       <td
                         colSpan={visibleCols.length + 1}
-                        className="bg-[#91c0f4] text-black text-xs font-semibold uppercase tracking-wider px-3 py-1.5"
+                        className="bg-[#91c0f4] text-black h-[28px] p-0 align-middle"
                       >
-                        {formatScheduleDate(r.date)}
+                        <span
+                          className="sticky inline-block text-sm font-bold uppercase tracking-wider"
+                          style={{ left: '50%', transform: 'translateX(-50%)' }}
+                        >
+                          {formatScheduleDate(r.date)}
+                        </span>
                       </td>
                     </tr>
                   )}
