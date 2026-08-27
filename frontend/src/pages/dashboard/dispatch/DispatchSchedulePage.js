@@ -382,8 +382,8 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
     }
   }, [density, densityKey]);
   const isCompact = density === 'compact';
-  const thPad = isCompact ? 'px-2.5 py-1.5' : 'px-3 py-2.5';
-  const tdPad = isCompact ? 'px-2.5 py-1.5' : 'px-3 py-2';
+  const thPad = isCompact ? 'px-2.5 py-1.5 text-center' : 'px-3 py-2.5 text-center';
+  const tdPad = isCompact ? 'px-2.5 py-1.5 text-center' : 'px-3 py-2 text-center';
   const tableTextSize = isCompact ? 'text-xs' : 'text-sm';
 
   const startResize = (key, e) => {
@@ -888,7 +888,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
             {visibleCols.map((c) => <col key={c.key} style={{ width: `${getColWidth(c.key)}px` }} />)}
             <col style={{ width: `${MANAGE_COLUMN_WIDTH}px` }} />
           </colgroup>
-          <thead className="bg-[#91c0f4] text-left text-xs uppercase tracking-wider text-black font-bold">
+          <thead className="bg-[#91c0f4] text-center text-xs uppercase tracking-wider text-black font-bold">
             <tr>
               {/* Header row wraps (`whitespace-normal` on each <th>) so narrow columns don't force horizontal scroll. */}
               {visibleCols.map((c, i) => (
@@ -898,7 +898,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
                   className={`relative ${thPad} font-bold text-black bg-[#91c0f4] whitespace-normal break-words ${cellBorder} ${columnCellBorder(c.key) || ''} ${i === 0 ? stickyFirstTh : ''}`}
                   data-testid={`col-header-${c.key}`}
                 >
-                  <span className="pr-3 block">{c.label}</span>
+                  <span className="px-3 block">{c.label}</span>
                   {/* Drag this 4-px edge left/right to resize the column.
                       Visible line + darker hover so users know it's grabbable. */}
                   <div
@@ -912,7 +912,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
                   />
                 </th>
               ))}
-              <th className={`${thPad} text-right font-bold text-black ${cellBorder} ${stickyLastTh}`}>Manage</th>
+              <th className={`${thPad} font-bold text-black ${cellBorder} ${stickyLastTh}`}>Manage</th>
             </tr>
           </thead>
           <tbody>
@@ -1132,7 +1132,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
                       </td>
                     );
                   })}
-                  <td className={`${tdPad} text-right whitespace-nowrap ${cellBorder} ${stickyLastTd}`}>
+                  <td className={`${tdPad} whitespace-nowrap ${cellBorder} ${stickyLastTd}`}>
                     {(canEdit || canCancel || canDelete) ? (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
