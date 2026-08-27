@@ -415,6 +415,14 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
   const getColWidth = (key) => colWidths[key] || DEFAULT_COLUMN_WIDTHS[key] || 140;
   const tableMinWidth = visibleCols.reduce((sum, c) => sum + getColWidth(c.key), MANAGE_COLUMN_WIDTH);
 
+  // Offset + width of the Site column (used to place the date-separator label
+  // directly under it). Falls back gracefully if Site is hidden.
+  const siteIndex = visibleCols.findIndex((c) => c.key === 'site');
+  const siteOffset = siteIndex >= 0
+    ? visibleCols.slice(0, siteIndex).reduce((sum, c) => sum + getColWidth(c.key), 0)
+    : 0;
+  const siteColWidth = siteIndex >= 0 ? getColWidth('site') : getColWidth('date');
+
   const toggleColumn = (key) =>
     setColumnConfig((prev) => prev.map((c) => (c.key === key ? { ...c, visible: !c.visible } : c)));
   const moveColumn = (fromKey, toKey) => {
@@ -1081,14 +1089,16 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
                     >
                       <td
                         colSpan={visibleCols.length + 1}
-                        className="bg-[#91c0f4] text-black h-[28px] p-0 align-middle"
+                        className="bg-[#91c0f4] text-black h-[28px] p-0 align-middle relative"
                       >
-                        <span
-                          className="sticky inline-block text-sm font-bold uppercase tracking-wider"
-                          style={{ left: '50%', transform: 'translateX(-50%)' }}
+                        <div
+                          className="absolute inset-y-0 flex items-center justify-center"
+                          style={{ left: `${siteOffset}px`, width: `${siteColWidth}px` }}
                         >
-                          {formatScheduleDate(r.date)}
-                        </span>
+                          <span className="text-sm font-bold uppercase tracking-wider">
+                            {formatScheduleDate(r.date)}
+                          </span>
+                        </div>
                       </td>
                     </tr>
                   )}
