@@ -1081,8 +1081,10 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
                     >
                       <td
                         colSpan={visibleCols.length + 1}
-                        className="h-3 bg-black p-0"
-                      />
+                        className="bg-[#91c0f4] text-black text-xs font-semibold uppercase tracking-wider px-3 py-1.5"
+                      >
+                        {formatScheduleDate(r.date)}
+                      </td>
                     </tr>
                   )}
 
