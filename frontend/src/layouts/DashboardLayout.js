@@ -286,7 +286,7 @@ const DashboardLayout = () => {
             {activeDispatchOps.length > 0 && (
               <>
                 {sidebarOpen && (
-                  <div className="mt-3 mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] dark:text-[#71717A]" data-testid="nav-group-operations">
+                  <div className="pt-3 pb-2 px-3 text-[10px] font-bold uppercase tracking-wider text-[#4F46E5] dark:text-[#A5B4FC]" data-testid="nav-group-operations">
                     Dispatch Operations
                   </div>
                 )}
@@ -319,7 +319,7 @@ const DashboardLayout = () => {
             {activeDispatchFin.length > 0 && (
               <>
                 {sidebarOpen && (
-                  <div className="mt-4 mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] dark:text-[#71717A]" data-testid="nav-group-financial">
+                  <div className="pt-5 pb-2 px-3 text-[10px] font-bold uppercase tracking-wider text-[#059669] dark:text-[#6EE7B7]" data-testid="nav-group-financial">
                     Dispatch Financial Report
                   </div>
                 )}
