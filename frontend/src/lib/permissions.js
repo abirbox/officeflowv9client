@@ -66,6 +66,12 @@ export const PERMISSION_GROUPS = [
     ],
   },
   {
+    key: 'payment_so', label: 'Payment (SO)',
+    perms: [
+      { code: 'dispatch.payment_so.view', label: 'View Payment (SO)' },
+    ],
+  },
+  {
     key: 'financial', label: 'Financial',
     perms: [
       { code: 'dispatch.financial.view', label: 'View Duty Rate / Billing Rate / Work Order' },

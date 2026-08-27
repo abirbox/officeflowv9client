@@ -24,6 +24,8 @@ const DEFAULTS = {
   currency_symbol: '৳',
   timezone: 'Asia/Dhaka',
   tz_offset_hours: 6.0,
+  not_found_lottie_enabled: true,
+  not_found_lottie_url: null,
 };
 
 const applyBranding = (s) => {

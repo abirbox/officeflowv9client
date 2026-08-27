@@ -589,7 +589,7 @@ const downloadEntityDetail = async (fmt, opts = {}) => {
     <div className="space-y-6" data-testid="dispatch-reports-page">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-[#0F172A] dark:text-[#FAFAFA]">Dispatch Reports</h1>
+          <h1 className="text-3xl font-bold text-[#0F172A] dark:text-[#FAFAFA]">Wage Report</h1>
           <p className="text-sm text-[#64748B] mt-1">
             {data.count} record{data.count !== 1 && 's'} · Financial data {canFinancial ? 'visible' : 'hidden'}
           </p>

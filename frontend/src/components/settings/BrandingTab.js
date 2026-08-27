@@ -50,6 +50,8 @@ const BrandingTab = () => {
         login_hero_subtitle: form.login_hero_subtitle,
         login_welcome_title: form.login_welcome_title,
         login_welcome_subtitle: form.login_welcome_subtitle,
+        not_found_lottie_enabled: !!form.not_found_lottie_enabled,
+        not_found_lottie_url: form.not_found_lottie_url || null,
         currency: form.currency,
         currency_symbol: form.currency_symbol,
         timezone: form.timezone,
@@ -228,6 +230,67 @@ const BrandingTab = () => {
               rows={3}
               data-testid="settings-hero-subtitle"
             />
+          </div>
+        </div>
+
+        {/* 404 Page */}
+        <div className="space-y-4">
+          <h3 className="text-sm font-semibold text-[#0F172A] dark:text-[#FAFAFA] uppercase tracking-wide">
+            404 Page
+          </h3>
+
+          <div className="rounded-lg border border-[#E2E8F0] dark:border-[#27272A] p-4 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label className="text-sm font-medium">Lottie Animation</Label>
+                <p className="text-xs text-[#64748B] mt-1">
+                  Show a Lottie animation when someone opens a page that does not exist.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setForm({
+                    ...form,
+                    not_found_lottie_enabled: !form.not_found_lottie_enabled,
+                  })
+                }
+                className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors ${
+                  form.not_found_lottie_enabled
+                    ? 'bg-[#4F46E5]'
+                    : 'bg-[#CBD5E1] dark:bg-[#3F3F46]'
+                }`}
+                aria-label="Toggle 404 Lottie animation"
+                aria-pressed={!!form.not_found_lottie_enabled}
+                data-testid="settings-404-lottie-toggle"
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 mt-0.5 rounded-full bg-white shadow-sm transform transition-transform ${
+                    form.not_found_lottie_enabled ? 'translate-x-5' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Lottie JSON URL</Label>
+              <Input
+                value={form.not_found_lottie_url || ''}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    not_found_lottie_url: e.target.value,
+                  })
+                }
+                placeholder="https://example.com/404-animation.json"
+                disabled={!form.not_found_lottie_enabled}
+                data-testid="settings-404-lottie-url"
+              />
+              <p className="text-xs text-[#64748B]">
+                Paste the direct URL to a Lottie JSON animation file.
+              </p>
+            </div>
           </div>
         </div>
 

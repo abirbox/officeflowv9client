@@ -116,7 +116,7 @@ def _in_range(date_str, date_from, date_to) -> bool:
 @router.get("/clients")
 async def list_payment_clients(request: Request, db=Depends(get_db), search: str = ""):
     user = await get_current_user(request, db)
-    require_permission(user, "dispatch.officers.view")
+    require_permission(user, "dispatch.payment_so.view")
     q = {}
     if search:
         q["$or"] = [{"name": {"$regex": search, "$options": "i"}},
@@ -144,7 +144,7 @@ async def list_payment_clients(request: Request, db=Depends(get_db), search: str
 async def search_officers(request: Request, db=Depends(get_db),
                           client_id: str = None, q: str = ""):
     user = await get_current_user(request, db)
-    require_permission(user, "dispatch.officers.view")
+    require_permission(user, "dispatch.payment_so.view")
     query = {}
     if client_id:
         query["client_id"] = client_id
@@ -247,7 +247,7 @@ async def list_records(request: Request, db=Depends(get_db),
                        client_id: str = None, search: str = None,
                        date_from: str = None, date_to: str = None):
     user = await get_current_user(request, db)
-    require_permission(user, "dispatch.officers.view")
+    require_permission(user, "dispatch.payment_so.view")
     if not client_id:
         raise HTTPException(422, "client_id is required")
     return await _client_context(db, client_id, search, date_from, date_to)
@@ -300,7 +300,7 @@ async def _officer_context(db, officer_id, date_from=None, date_to=None):
 async def officer_records(request: Request, db=Depends(get_db), officer_id: str = None,
                           date_from: str = None, date_to: str = None):
     user = await get_current_user(request, db)
-    require_permission(user, "dispatch.officers.view")
+    require_permission(user, "dispatch.payment_so.view")
     if not officer_id:
         raise HTTPException(422, "officer_id is required")
     return await _officer_context(db, officer_id, date_from, date_to)
@@ -310,7 +310,7 @@ async def officer_records(request: Request, db=Depends(get_db), officer_id: str 
 async def create_record(payload: PaymentRecordCreate, request: Request, db=Depends(get_db)):
     """Create a new dated payment entry for an officer."""
     user = await get_current_user(request, db)
-    require_permission(user, "dispatch.officers.view")
+    require_permission(user, "dispatch.payment_so.view")
     snap = await _officer_snapshot(db, payload.officer_id)
     if not snap.get("client_id"):
         raise HTTPException(400, "Security Officer has no Client assigned")
@@ -331,7 +331,7 @@ async def create_record(payload: PaymentRecordCreate, request: Request, db=Depen
 @router.put("/records/{record_id}")
 async def update_record(record_id: str, payload: PaymentRecordCreate, request: Request, db=Depends(get_db)):
     user = await get_current_user(request, db)
-    require_permission(user, "dispatch.officers.view")
+    require_permission(user, "dispatch.payment_so.view")
     existing = await db.dispatch_so_payment_records.find_one({"_id": _oid(record_id)})
     if not existing:
         raise HTTPException(404, "Record not found")
@@ -350,7 +350,7 @@ async def update_record(record_id: str, payload: PaymentRecordCreate, request: R
 @router.delete("/records/{record_id}")
 async def delete_record(record_id: str, request: Request, db=Depends(get_db)):
     user = await get_current_user(request, db)
-    require_permission(user, "dispatch.officers.view")
+    require_permission(user, "dispatch.payment_so.view")
     r = await db.dispatch_so_payment_records.delete_one({"_id": _oid(record_id)})
     if r.deleted_count == 0:
         raise HTTPException(404, "Record not found")
@@ -365,7 +365,7 @@ async def client_report_pdf(request: Request, db=Depends(get_db),
                             client_id: str = None, search: str = None,
                             date_from: str = None, date_to: str = None):
     user = await get_current_user(request, db)
-    require_permission(user, "dispatch.officers.view")
+    require_permission(user, "dispatch.payment_so.view")
     if not client_id:
         raise HTTPException(422, "client_id is required")
     ctx = await _client_context(db, client_id, search, date_from, date_to)
@@ -381,7 +381,7 @@ async def client_report_xlsx(request: Request, db=Depends(get_db),
                              client_id: str = None, search: str = None,
                              date_from: str = None, date_to: str = None):
     user = await get_current_user(request, db)
-    require_permission(user, "dispatch.officers.view")
+    require_permission(user, "dispatch.payment_so.view")
     if not client_id:
         raise HTTPException(422, "client_id is required")
     ctx = await _client_context(db, client_id, search, date_from, date_to)
@@ -398,7 +398,7 @@ async def client_report_xlsx(request: Request, db=Depends(get_db),
 async def officer_report_pdf(request: Request, db=Depends(get_db), officer_id: str = None,
                              date_from: str = None, date_to: str = None):
     user = await get_current_user(request, db)
-    require_permission(user, "dispatch.officers.view")
+    require_permission(user, "dispatch.payment_so.view")
     if not officer_id:
         raise HTTPException(422, "officer_id is required")
     ctx = await _officer_context(db, officer_id, date_from, date_to)
@@ -413,7 +413,7 @@ async def officer_report_pdf(request: Request, db=Depends(get_db), officer_id: s
 async def officer_report_xlsx(request: Request, db=Depends(get_db), officer_id: str = None,
                               date_from: str = None, date_to: str = None):
     user = await get_current_user(request, db)
-    require_permission(user, "dispatch.officers.view")
+    require_permission(user, "dispatch.payment_so.view")
     if not officer_id:
         raise HTTPException(422, "officer_id is required")
     ctx = await _officer_context(db, officer_id, date_from, date_to)

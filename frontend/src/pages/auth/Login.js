@@ -30,7 +30,11 @@ const Login = () => {
 
     if (result.success) {
       refresh();
-      navigate(from, { replace: true });
+      if (result.user?.role === 'client') {
+        navigate('/client', { replace: true });
+      } else {
+        navigate(from, { replace: true });
+      }
     } else {
       setError(result.error);
     }
@@ -157,7 +161,20 @@ const Login = () => {
           transition={{ duration: 0.6 }}
           className="text-white text-center max-w-lg"
         >
-          <h2 className="text-5xl font-bold mb-6 tracking-tight" data-testid="login-hero-title">{heroTitle}</h2>
+          {settings?.brand_logo_url && (
+            <img
+              src={settings.brand_logo_url}
+              alt={settings?.brand_name || 'Brand'}
+              data-testid="login-hero-logo"
+              className="w-32 h-32 md:w-40 md:h-40 mx-auto mb-8 object-contain"
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            />
+          )}
+
+          <h2 className="text-5xl font-bold mb-6 tracking-tight" data-testid="login-hero-title">
+            {heroTitle}
+          </h2>
+
           <p className="text-xl text-indigo-100 leading-relaxed" data-testid="login-hero-subtitle">
             {heroSubtitle}
           </p>

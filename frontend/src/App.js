@@ -5,11 +5,13 @@ import { SiteThemeProvider } from "@/contexts/SiteThemeContext";
 import { PresenceProvider } from "@/contexts/PresenceContext";
 import { Toaster } from "@/components/ui/sonner";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import GuestRoute from "@/components/GuestRoute";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import Login from "@/pages/auth/Login";
 import Register from "@/pages/auth/Register";
 import ForgotPassword from "@/pages/auth/ForgotPassword";
 import ResetPassword from "@/pages/auth/ResetPassword";
+import NotFoundPage from "@/pages/NotFoundPage";
 import DashboardHome from "@/pages/dashboard/DashboardHome";
 import CompaniesPage from "@/pages/dashboard/CompaniesPage";  // legacy — hidden from nav
 import EmployeesPage from "@/pages/dashboard/EmployeesPage";
@@ -33,6 +35,13 @@ import DispatchAuditPage from "@/pages/dashboard/dispatch/DispatchAuditPage";
 import DispatchInvoicesPage from "@/pages/dashboard/dispatch/DispatchInvoicesPage";
 import PaymentSOPage from "@/pages/dashboard/dispatch/PaymentSOPage";
 import { ClientsPage, VendorsPage, OfficersPage, PostSitesPage } from "@/pages/dashboard/dispatch/EntityPages";
+import ClientProtectedRoute from "@/components/ClientProtectedRoute";
+import ClientPortalLayout from "@/layouts/ClientPortalLayout";
+import ClientDashboard from "@/pages/client/ClientDashboard";
+import ClientVendors from "@/pages/client/ClientVendors";
+import ClientReports from "@/pages/client/ClientReports";
+import ClientPaymentSO from "@/pages/client/ClientPaymentSO";
+import ClientWageReport from "@/pages/client/ClientWageReport";
 import "@/App.css";
 
 function App() {
@@ -43,7 +52,14 @@ function App() {
         <BrowserRouter>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/login" element={<Login />} />
+          <Route
+            path="/login"
+            element={
+              <GuestRoute>
+                <Login />
+              </GuestRoute>
+            }
+          />
           <Route path="/register" element={<Navigate to="/login" replace />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
@@ -86,6 +102,28 @@ function App() {
             <Route path="dispatch/officers" element={<OfficersPage />} />
             <Route path="dispatch/post-sites" element={<PostSitesPage />} />
           </Route>
+
+          <Route
+            path="/client"
+            element={
+              <ClientProtectedRoute>
+                <ClientPortalLayout />
+              </ClientProtectedRoute>
+            }
+          >
+            <Route index element={<ClientDashboard />} />
+            <Route path="today" element={<DispatchSchedulePage todayOnly />} />
+            <Route path="schedules" element={<DispatchSchedulePage />} />
+            <Route path="calendar" element={<DispatchCalendarPage />} />
+            <Route path="officers" element={<OfficersPage />} />
+            <Route path="post-sites" element={<PostSitesPage />} />
+            <Route path="vendors" element={<ClientVendors />} />
+            <Route path="payments" element={<ClientPaymentSO />} />
+            <Route path="wage-report" element={<ClientWageReport />} />
+            <Route path="reports" element={<ClientReports />} />
+          </Route>
+
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
         <Toaster />
         </BrowserRouter>

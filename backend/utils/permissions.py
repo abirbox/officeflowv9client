@@ -17,6 +17,7 @@ DISPATCH_PERMISSIONS = {
     "dispatch.clients": ["view", "create", "edit", "delete"],
     "dispatch.vendors": ["view", "create", "edit", "delete"],
     "dispatch.officers": ["view", "create", "edit", "delete"],
+    "dispatch.payment_so": ["view"],
     "dispatch.post_sites": ["view", "create", "edit", "delete"],
     "dispatch.confirmation": ["view", "manage", "history"],
     "dispatch.reports": ["view", "export"],

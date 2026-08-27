@@ -17,8 +17,9 @@ from models.dispatch import (
     SHIFT_TYPES, SHIFT_STATUSES, COMPLETED_STATUSES, CONFIRMATION_STATUSES, CONFIRMATION_METHODS,
     OFFICER_TYPES,
     PayslipRecordCreate,
+    ClientPortalCredentials,
 )
-from utils.auth import get_current_user
+from utils.auth import get_current_user, hash_password
 from utils.permissions import (
     has_permission, require_permission, strip_financial,
     ALL_PERMISSIONS, FINANCIAL_FIELDS,
@@ -34,7 +35,19 @@ UMA_TIME = "UMA"
 from utils.storage import to_public_url
 from utils.ws import manager
 
-router = APIRouter(prefix="/dispatch", tags=["Dispatch"])
+
+async def _block_client_role(request: Request):
+    """Clients never use the admin Dispatch API directly — they have their own
+    scoped /api/portal/dispatch endpoints. This guard hard-blocks role=client
+    on every /api/dispatch/* route so a client can never read another client's
+    data through the admin endpoints. Admin/HD/staff are unaffected."""
+    db = request.app.state.db
+    user = await get_current_user(request, db)
+    if user.get("role") == "client":
+        raise HTTPException(status_code=403, detail="Clients must use the client portal")
+
+
+router = APIRouter(prefix="/dispatch", tags=["Dispatch"], dependencies=[Depends(_block_client_role)])
 
 
 def _format_pin(vendor_code, post_pin):
@@ -279,6 +292,91 @@ async def delete_vendor(vid: str, request: Request, db=Depends(get_db)):
     if r.deleted_count == 0: raise HTTPException(404, "Vendor not found")
     await _audit(db, user, "delete", "vendor", vid, (existing or {}).get("name"))
     return {"message": "Vendor deleted"}
+
+
+# =====================================================================
+#  CLIENT PORTAL LOGIN  (admin creates/manages a client's login account)
+# =====================================================================
+# Dispatch permissions granted to a Client Portal login so the reused Dispatch
+# page components render their controls. Direct /api/dispatch/* stays blocked for
+# role=client (see _block_client_role); these only work via /api/portal/dispatch/*.
+CLIENT_PORTAL_PERMS = [
+    "dispatch.dashboard.view",
+    "dispatch.schedule.view", "dispatch.schedule.create", "dispatch.schedule.edit",
+    "dispatch.schedule.cancel", "dispatch.schedule.delete",
+    "dispatch.clients.view", "dispatch.vendors.view",
+    "dispatch.officers.view", "dispatch.officers.create", "dispatch.officers.edit", "dispatch.officers.delete",
+    "dispatch.post_sites.view", "dispatch.post_sites.create", "dispatch.post_sites.edit", "dispatch.post_sites.delete",
+    "dispatch.confirmation.view", "dispatch.confirmation.manage", "dispatch.confirmation.history",
+]
+
+
+@router.get("/clients/{cid}/portal")
+async def get_client_portal(cid: str, request: Request, db=Depends(get_db)):
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.clients.view")
+    client = await db.dispatch_clients.find_one({"_id": _oid(cid)})
+    if not client:
+        raise HTTPException(404, "Client not found")
+    portal_user = await db.users.find_one({"role": "client", "client_id": cid})
+    return {"enabled": bool(portal_user),
+            "email": portal_user.get("email") if portal_user else None}
+
+
+@router.put("/clients/{cid}/portal")
+async def set_client_portal(cid: str, payload: ClientPortalCredentials,
+                            request: Request, db=Depends(get_db)):
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.clients.edit")
+    client = await db.dispatch_clients.find_one({"_id": _oid(cid)})
+    if not client:
+        raise HTTPException(404, "Client not found")
+
+    email = payload.email.lower().strip()
+    portal_user = await db.users.find_one({"role": "client", "client_id": cid})
+
+    # Email must be unique across ALL users (except this client's own account).
+    dup = await db.users.find_one({"email": email})
+    if dup and (not portal_user or str(dup["_id"]) != str(portal_user["_id"])):
+        raise HTTPException(400, "Email already in use by another account")
+
+    if portal_user:
+        upd = {"email": email, "name": client.get("name"),
+               "client_id": cid, "permissions": CLIENT_PORTAL_PERMS, "updated_at": _now()}
+        if payload.password:
+            upd["password_hash"] = hash_password(payload.password)
+        await db.users.update_one({"_id": portal_user["_id"]}, {"$set": upd})
+    else:
+        if not payload.password:
+            raise HTTPException(400, "Password is required to create a client login")
+        await db.users.insert_one({
+            "email": email,
+            "password_hash": hash_password(payload.password),
+            "name": client.get("name"),
+            "role": "client",
+            "client_id": cid,
+            "permissions": CLIENT_PORTAL_PERMS,
+            "status": "active",
+            "created_at": _now(),
+            "updated_at": _now(),
+        })
+
+    await _audit(db, user, "update", "client", cid, client.get("name"),
+                 changes={"portal_login": email})
+    return {"enabled": True, "email": email}
+
+
+@router.delete("/clients/{cid}/portal")
+async def delete_client_portal(cid: str, request: Request, db=Depends(get_db)):
+    user = await get_current_user(request, db)
+    require_permission(user, "dispatch.clients.edit")
+    client = await db.dispatch_clients.find_one({"_id": _oid(cid)})
+    if not client:
+        raise HTTPException(404, "Client not found")
+    await db.users.delete_one({"role": "client", "client_id": cid})
+    await _audit(db, user, "update", "client", cid, client.get("name"),
+                 changes={"portal_login": "removed"})
+    return {"enabled": False}
 
 
 # =====================================================================
@@ -665,11 +763,14 @@ async def _audit(db, actor, action, entity_type, entity_id,
 async def _notify_dispatch(db, actor, title, message, link, event):
     """Persist a notification for every dispatch-privileged user (except the
     actor) and push a live event to any connected WebSocket clients."""
-    recipients = await db.users.find({"$or": [
-        {"role": {"$in": ["super_admin", "hd"]}},
-        {"permissions": {"$in": [
-            "dispatch.confirmation.view", "dispatch.schedule.view", "dispatch.dashboard.view",
-        ]}},
+    recipients = await db.users.find({"$and": [
+        {"role": {"$ne": "client"}},
+        {"$or": [
+            {"role": {"$in": ["super_admin", "hd"]}},
+            {"permissions": {"$in": [
+                "dispatch.confirmation.view", "dispatch.schedule.view", "dispatch.dashboard.view",
+            ]}},
+        ]},
     ]}, {"_id": 1}).to_list(2000)
     actor_id = str(actor.get("_id"))
     ids = [str(u["_id"]) for u in recipients if str(u["_id"]) != actor_id]

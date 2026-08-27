@@ -19,6 +19,8 @@ class AppSettings(BaseModel):
     currency_symbol: str = "৳"
     timezone: str = "Asia/Dhaka"
     tz_offset_hours: float = 6.0
+    not_found_lottie_enabled: bool = True
+    not_found_lottie_url: Optional[str] = None
 
 
 class AppSettingsUpdate(BaseModel):
@@ -38,6 +40,16 @@ class AppSettingsUpdate(BaseModel):
     currency_symbol: Optional[str] = None
     timezone: Optional[str] = None
     tz_offset_hours: Optional[float] = None
+    not_found_lottie_enabled: Optional[bool] = None
+    not_found_lottie_url: Optional[str] = None
+
+
+class EmailSettingsUpdate(BaseModel):
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    username: Optional[str] = None
+    password: Optional[str] = None  # blank/omitted = keep existing
+    from_email: Optional[str] = None
 
 
 # ISO-4217 currency directory

@@ -82,9 +82,9 @@ const dispatchNavigationOperations = [
 ];
 
 const dispatchNavigationFinancial = [
-  { name: 'Dispatch Reports', href: '/dashboard/dispatch/reports', icon: BarChart3, perm: 'dispatch.reports.view' },
+  { name: 'Wage Report', href: '/dashboard/dispatch/reports', icon: BarChart3, perm: 'dispatch.reports.view' },
   { name: 'Invoices', href: '/dashboard/dispatch/invoices', icon: FileText, perm: 'dispatch.reports.view' },
-  { name: 'Payment (SO)', href: '/dashboard/dispatch/payment-so', icon: DollarSign, perm: 'dispatch.officers.view' },
+  { name: 'Payment (SO)', href: '/dashboard/dispatch/payment-so', icon: DollarSign, perm: 'dispatch.payment_so.view' },
 ];
 
 const dispatchNavigation = [...dispatchNavigationOperations, ...dispatchNavigationFinancial];
