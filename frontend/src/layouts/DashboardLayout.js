@@ -69,20 +69,25 @@ const allNavigation = [
   { name: 'Settings', href: '/dashboard/settings', icon: Settings, roles: ['super_admin', 'admin', 'hr', 'manager', 'employee'] },
 ];
 
-const dispatchNavigation = [
+const dispatchNavigationOperations = [
   { name: 'Dispatch Dashboard', href: '/dashboard/dispatch', icon: LayoutDashboard, perm: 'dispatch.dashboard.view' },
   { name: "Today's Dispatch", href: '/dashboard/dispatch/today', icon: ClipboardList, perm: 'dispatch.schedule.view' },
   { name: 'Dispatch Schedule', href: '/dashboard/dispatch/schedules', icon: Calendar, perm: 'dispatch.schedule.view' },
   { name: 'Dispatch Calendar', href: '/dashboard/dispatch/calendar', icon: Calendar, perm: 'dispatch.schedule.view' },
-  { name: 'Dispatch Reports', href: '/dashboard/dispatch/reports', icon: BarChart3, perm: 'dispatch.reports.view' },
-  { name: 'Invoices', href: '/dashboard/dispatch/invoices', icon: FileText, perm: 'dispatch.reports.view' },
-  { name: 'Payment (SO)', href: '/dashboard/dispatch/payment-so', icon: DollarSign, perm: 'dispatch.officers.view' },
   { name: 'Clients', href: '/dashboard/dispatch/clients', icon: Building2, perm: 'dispatch.clients.view' },
   { name: 'Vendors', href: '/dashboard/dispatch/vendors', icon: Building2, perm: 'dispatch.vendors.view' },
   { name: 'Security Officers', href: '/dashboard/dispatch/officers', icon: Shield, perm: 'dispatch.officers.view' },
   { name: 'Post Sites', href: '/dashboard/dispatch/post-sites', icon: MapPin, perm: 'dispatch.post_sites.view' },
   { name: 'Audit Log', href: '/dashboard/dispatch/audit', icon: ScrollText, perm: 'dispatch.audit.view' },
 ];
+
+const dispatchNavigationFinancial = [
+  { name: 'Dispatch Reports', href: '/dashboard/dispatch/reports', icon: BarChart3, perm: 'dispatch.reports.view' },
+  { name: 'Invoices', href: '/dashboard/dispatch/invoices', icon: FileText, perm: 'dispatch.reports.view' },
+  { name: 'Payment (SO)', href: '/dashboard/dispatch/payment-so', icon: DollarSign, perm: 'dispatch.officers.view' },
+];
+
+const dispatchNavigation = [...dispatchNavigationOperations, ...dispatchNavigationFinancial];
 
 const DashboardLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -108,6 +113,12 @@ const DashboardLayout = () => {
     : [];
   const navigation = effectivePortal === 'dispatch' ? [] : employeeNav;
   const activeDispatchNav = effectivePortal === 'dispatch' ? dispatchNav : [];
+  const activeDispatchOps = effectivePortal === 'dispatch'
+    ? dispatchNavigationOperations.filter((item) => hasPermission(user, item.perm))
+    : [];
+  const activeDispatchFin = effectivePortal === 'dispatch'
+    ? dispatchNavigationFinancial.filter((item) => hasPermission(user, item.perm))
+    : [];
 
   const dispatchHome = () => (dispatchNav[0]?.href || '/dashboard/dispatch');
   const choosePortal = (p) => {
@@ -272,30 +283,72 @@ const DashboardLayout = () => {
                 </button>
               );
             })}
-            {activeDispatchNav.map((item) => {
-              const Icon = item.icon;
-              const active = isActive(item.href);
-              return (
-                <button
-                  key={item.name}
-                  onClick={() => navigate(item.href)}
-                  data-testid={`nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-                    active ? 'bg-[#4F46E5] text-white'
-                      : 'text-[#64748B] dark:text-[#A1A1AA] hover:bg-[#F1F5F9] dark:hover:bg-[#27272A] hover:text-[#0F172A] dark:hover:text-[#FAFAFA]'
-                  }`}
-                >
-                  <Icon className="w-5 h-5 flex-shrink-0" />
-                  <AnimatePresence>
-                    {sidebarOpen && (
-                      <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-sm font-medium">
-                        {item.name}
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                </button>
-              );
-            })}
+            {activeDispatchOps.length > 0 && (
+              <>
+                {sidebarOpen && (
+                  <div className="mt-3 mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] dark:text-[#71717A]" data-testid="nav-group-operations">
+                    Dispatch Operations
+                  </div>
+                )}
+                {activeDispatchOps.map((item) => {
+                  const Icon = item.icon;
+                  const active = isActive(item.href);
+                  return (
+                    <button
+                      key={item.name}
+                      onClick={() => navigate(item.href)}
+                      data-testid={`nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+                        active ? 'bg-[#4F46E5] text-white'
+                          : 'text-[#64748B] dark:text-[#A1A1AA] hover:bg-[#F1F5F9] dark:hover:bg-[#27272A] hover:text-[#0F172A] dark:hover:text-[#FAFAFA]'
+                      }`}
+                    >
+                      <Icon className="w-5 h-5 flex-shrink-0" />
+                      <AnimatePresence>
+                        {sidebarOpen && (
+                          <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-sm font-medium">
+                            {item.name}
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </button>
+                  );
+                })}
+              </>
+            )}
+            {activeDispatchFin.length > 0 && (
+              <>
+                {sidebarOpen && (
+                  <div className="mt-4 mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] dark:text-[#71717A]" data-testid="nav-group-financial">
+                    Dispatch Financial Report
+                  </div>
+                )}
+                {activeDispatchFin.map((item) => {
+                  const Icon = item.icon;
+                  const active = isActive(item.href);
+                  return (
+                    <button
+                      key={item.name}
+                      onClick={() => navigate(item.href)}
+                      data-testid={`nav-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+                        active ? 'bg-[#4F46E5] text-white'
+                          : 'text-[#64748B] dark:text-[#A1A1AA] hover:bg-[#F1F5F9] dark:hover:bg-[#27272A] hover:text-[#0F172A] dark:hover:text-[#FAFAFA]'
+                      }`}
+                    >
+                      <Icon className="w-5 h-5 flex-shrink-0" />
+                      <AnimatePresence>
+                        {sidebarOpen && (
+                          <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-sm font-medium">
+                            {item.name}
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </button>
+                  );
+                })}
+              </>
+            )}
             {canDispatch && (
               <button
                 onClick={switchPortal}
