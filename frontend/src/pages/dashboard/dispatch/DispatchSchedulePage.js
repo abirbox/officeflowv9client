@@ -451,8 +451,8 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
   // keeps them visible while horizontal-scrolling wide tables. The row
   // background follows the shift tint, so sticky cells must match that
   // tint at render time (see cell rendering below).
-  const stickyFirstTh = 'sticky left-0 z-20 bg-[var(--table-header-bg)]';
-  const stickyLastTh = 'sticky right-0 z-20 bg-[var(--table-header-bg)]';
+  const stickyFirstTh = 'sticky left-0 z-20 bg-[#91c0f4]';
+  const stickyLastTh = 'sticky right-0 z-20 bg-[#91c0f4]';
   // Excel-like grid: right + bottom border on each cell; container's outer
   // border closes the left and top edges.
   const cellBorder = 'border-r border-b border-[#E2E8F0] dark:border-[#27272A]';
@@ -461,7 +461,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
   // of the row's shift tint (Date is the anchor column, Security Officer is
   // called out separately). Returns null when no override applies.
   const columnCellBg = (key) => {
-    if (key === 'date') return 'bg-[var(--table-header-bg)]';
+    if (key === 'date') return 'bg-[#91c0f4] text-black';
     if (key === 'officer') return 'bg-[rgb(232,250,255)] text-[#0F172A] dark:bg-sky-950/50 dark:text-sky-100';
     return null;
   };
@@ -880,14 +880,14 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
             {visibleCols.map((c) => <col key={c.key} style={{ width: `${getColWidth(c.key)}px` }} />)}
             <col style={{ width: `${MANAGE_COLUMN_WIDTH}px` }} />
           </colgroup>
-          <thead className="bg-[var(--table-header-bg)] text-left text-xs uppercase tracking-wider text-[var(--table-header-fg)] font-bold">
+          <thead className="bg-[#91c0f4] text-left text-xs uppercase tracking-wider text-black font-bold">
             <tr>
               {/* Header row wraps (`whitespace-normal` on each <th>) so narrow columns don't force horizontal scroll. */}
               {visibleCols.map((c, i) => (
                 <th
                   key={c.key}
                   style={{ width: `${getColWidth(c.key)}px` }}
-                  className={`relative ${thPad} font-bold text-black whitespace-normal break-words ${cellBorder} ${columnCellBorder(c.key) || ''} ${i === 0 ? stickyFirstTh : ''}`}
+                  className={`relative ${thPad} font-bold text-black bg-[#91c0f4] whitespace-normal break-words ${cellBorder} ${columnCellBorder(c.key) || ''} ${i === 0 ? stickyFirstTh : ''}`}
                   data-testid={`col-header-${c.key}`}
                 >
                   <span className="pr-3 block">{c.label}</span>
