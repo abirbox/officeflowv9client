@@ -2500,6 +2500,9 @@ async def report_entity_detail(
                     "logo_url": to_public_url(cdoc["logo_path"]) if cdoc.get("logo_path") else None,
                     "address": cdoc.get("address"),
                     "city": cdoc.get("city"),
+                    "phone": cdoc.get("contact_number"),
+                    "email": cdoc.get("email"),
+                    "website": cdoc.get("website"),
                 }
 
     # ---- Advance salary + payslip adjustments (officer payslip only) ----
@@ -2685,6 +2688,10 @@ async def export_entity_detail(
             advance_repaid=round(period_repaid, 2),
             remaining_balance=remaining_balance,
             advance_entries=advance_entries,
+            client_address=client_info.get("address"),
+            client_phone=client_info.get("phone"),
+            client_email=client_info.get("email"),
+            client_website=client_info.get("website"),
         )
         return StreamingResponse(io.BytesIO(body), media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="payslip-{officer_name}-{data["date_from"]}-{data["date_to"]}.pdf"'})
@@ -2801,6 +2808,10 @@ async def _build_officer_payslip_bytes(
         advance_repaid=0.0,
         remaining_balance=remaining_balance,
         advance_entries=[],
+        client_address=client_info.get("address"),
+        client_phone=client_info.get("phone"),
+        client_email=client_info.get("email"),
+        client_website=client_info.get("website"),
     )
 
     gross = float((data.get("summary") or {}).get("total_amount") or 0) if fin else 0.0

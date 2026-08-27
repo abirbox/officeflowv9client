@@ -526,6 +526,10 @@ def build_officer_payslip_pdf(
     advance_repaid: float = 0.0,
     remaining_balance: float = 0.0,
     advance_entries: list = None,
+    client_address: str | None = None,
+    client_phone: str | None = None,
+    client_email: str | None = None,
+    client_website: str | None = None,
 ) -> bytes:
     """Branded per-officer/per-client payslip in the layout the customer asked
     for (Arseas Security Service mockup).
@@ -586,6 +590,34 @@ def build_officer_payslip_pdf(
             ),
         )
     )
+
+    # Centered contact block: address / phone / email / website — each on its
+    # own line, only rendered when the field is populated on the client doc.
+    contact_style = ParagraphStyle(
+        'contact', parent=styles['Normal'],
+        fontSize=9, leading=12, alignment=1,
+        textColor=colors.HexColor('#334155'),
+    )
+    if client_address:
+        center_cells.append(
+            Paragraph(f"<para align='center'>{client_address}</para>", contact_style)
+        )
+    contact_bits = []
+    if client_phone:
+        contact_bits.append(f"Tel: {client_phone}")
+    if client_email:
+        contact_bits.append(client_email)
+    if contact_bits:
+        center_cells.append(
+            Paragraph(
+                f"<para align='center'>{' &nbsp;·&nbsp; '.join(contact_bits)}</para>",
+                contact_style,
+            )
+        )
+    if client_website:
+        center_cells.append(
+            Paragraph(f"<para align='center'>{client_website}</para>", contact_style)
+        )
 
     center_stack = Table(
         [[c] for c in center_cells],
