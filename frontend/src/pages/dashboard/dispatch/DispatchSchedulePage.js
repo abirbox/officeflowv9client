@@ -462,7 +462,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
   // called out separately). Returns null when no override applies.
   const columnCellBg = (key) => {
     if (key === 'date') return 'bg-[var(--table-header-bg)]';
-    if (key === 'officer') return 'bg-[rgb(232,250,255)] dark:bg-[rgb(232,250,255)]';
+    if (key === 'officer') return 'bg-[rgb(232,250,255)] text-[#0F172A] dark:bg-sky-950/50 dark:text-sky-100';
     return null;
   };
   // Per-column border colour override. Currently unused — kept for future
