@@ -530,6 +530,7 @@ def build_officer_payslip_pdf(
     client_phone: str | None = None,
     client_email: str | None = None,
     client_website: str | None = None,
+    officer_ssn: str | None = None,
 ) -> bytes:
     """Branded per-officer/per-client payslip in the layout the customer asked
     for (Arseas Security Service mockup).
@@ -649,6 +650,10 @@ def build_officer_payslip_pdf(
         [
             Paragraph("<b>Security Officer's Name:</b>", meta_style),
             Paragraph(officer_name or "—", meta_style)
+        ],
+        [
+            Paragraph("<b>Social Security Code:</b>", meta_style),
+            Paragraph(officer_ssn or "—", meta_style)
         ],
         [
             Paragraph("<b>Duty Periods:</b>", meta_style),

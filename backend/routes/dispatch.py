@@ -2692,6 +2692,7 @@ async def export_entity_detail(
             client_phone=client_info.get("phone"),
             client_email=client_info.get("email"),
             client_website=client_info.get("website"),
+            officer_ssn=(data.get("entity") or {}).get("social_security_code"),
         )
         return StreamingResponse(io.BytesIO(body), media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="payslip-{officer_name}-{data["date_from"]}-{data["date_to"]}.pdf"'})
@@ -2812,6 +2813,7 @@ async def _build_officer_payslip_bytes(
         client_phone=client_info.get("phone"),
         client_email=client_info.get("email"),
         client_website=client_info.get("website"),
+        officer_ssn=(data.get("entity") or {}).get("social_security_code"),
     )
 
     gross = float((data.get("summary") or {}).get("total_amount") or 0) if fin else 0.0
