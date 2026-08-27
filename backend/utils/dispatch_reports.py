@@ -606,7 +606,7 @@ def build_officer_payslip_pdf(
     if client_phone:
         contact_bits.append(f"Tel: {client_phone}")
     if client_email:
-        contact_bits.append(client_email)
+        contact_bits.append(f"Email: {client_email}")
     if contact_bits:
         center_cells.append(
             Paragraph(
@@ -616,7 +616,10 @@ def build_officer_payslip_pdf(
         )
     if client_website:
         center_cells.append(
-            Paragraph(f"<para align='center'>{client_website}</para>", contact_style)
+            Paragraph(
+                f"<para align='center'>Website: {client_website}</para>",
+                contact_style,
+            )
         )
 
     center_stack = Table(
