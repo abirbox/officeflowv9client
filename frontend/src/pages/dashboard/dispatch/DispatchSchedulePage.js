@@ -919,7 +919,7 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
               const stickyLastTd = `sticky right-0 z-10 ${rowBgClass}`;
               const cellFor = (key) => {
                 switch (key) {
-                  case 'date':         return <span className="whitespace-nowrap text-[#334155] dark:text-[#E4E4E7]" data-testid={`sched-date-${r.id}`}>{formatScheduleDate(r.date)}</span>;
+                  case 'date':         return <span className="whitespace-nowrap text-black" data-testid={`sched-date-${r.id}`}>{formatScheduleDate(r.date)}</span>;
                   case 'shift':        return <span className="font-medium">{r.shift_type || '—'}</span>;
                   case 'start_time':   return <span className="whitespace-nowrap">{r.start_time || '—'}</span>;
                   case 'end_time':     return <span className="whitespace-nowrap">{r.end_time || '—'}</span>;
