@@ -255,8 +255,13 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
   };
 
   const persistRemarks = async (r, combined) => {
-    await api.put(`/dispatch/schedules/${r.id}`, { remarks: combined || null });
-    setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, remarks: combined, last_modified_remarks: combined } : x)));
+    // Persist to `remarks` (canonical field) AND clear `last_modified_remarks`
+    // (audit copy) so a delete doesn't get resurrected by the merge on refresh.
+    await api.put(`/dispatch/schedules/${r.id}`, {
+      remarks: combined || null,
+      last_modified_remarks: null,
+    });
+    setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, remarks: combined, last_modified_remarks: null } : x)));
   };
 
   const addRemark = async (r) => {

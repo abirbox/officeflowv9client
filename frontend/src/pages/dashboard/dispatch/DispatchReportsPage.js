@@ -1101,7 +1101,16 @@ const downloadEntityDetail = async (fmt, opts = {}) => {
                             <td className="px-2 py-2">{r.post_site_name || '—'}</td>
                             <td className="px-2 py-2">{r.city || '—'}</td>
                             <td className="px-2 py-2 text-[#DC2626] font-semibold">{formatPin(r) || '—'}</td>
-                            <td className="px-2 py-2 max-w-[220px] truncate" title={r.remarks || ''}>{r.remarks || '—'}</td>
+                            <td className="px-2 py-2 max-w-[220px] whitespace-pre-wrap break-words align-top text-xs" title={r.remarks || ''}>
+                              {r.remarks
+                                ? String(r.remarks).split('\n').map((s) => s.trim()).filter(Boolean).map((line, i) => (
+                                    <div key={i} className="flex items-start gap-1">
+                                      <span className="text-[#94A3B8]">•</span>
+                                      <span className="flex-1">{line}</span>
+                                    </div>
+                                  ))
+                                : '—'}
+                            </td>
                           </tr>
                         ))}
                         {detail.data.items.length === 0 && (
@@ -1159,7 +1168,16 @@ const downloadEntityDetail = async (fmt, opts = {}) => {
                             <td className="px-2 py-2">{r.client_name} / {r.vendor_name}</td>
                             <td className="px-2 py-2">{r.confirmation_status}{r.confirmation_method ? ` (${r.confirmation_method})` : ''}</td>
                             <td className="px-2 py-2">{r.shift_status}</td>
-                            <td className="px-2 py-2 max-w-[220px] truncate" title={r.remarks || ''}>{r.remarks || '—'}</td>
+                            <td className="px-2 py-2 max-w-[220px] whitespace-pre-wrap break-words align-top text-xs" title={r.remarks || ''}>
+                              {r.remarks
+                                ? String(r.remarks).split('\n').map((s) => s.trim()).filter(Boolean).map((line, i) => (
+                                    <div key={i} className="flex items-start gap-1">
+                                      <span className="text-[#94A3B8]">•</span>
+                                      <span className="flex-1">{line}</span>
+                                    </div>
+                                  ))
+                                : '—'}
+                            </td>
                             {canFinancial && <>
                               <td className="px-2 py-2">{formatCurrency(r.duty_rate)}</td>
                               <td className="px-2 py-2">{formatCurrency(r.billing_rate)}</td>

@@ -197,6 +197,7 @@ class ScheduleUpdate(BaseModel):
     billing_rate: Optional[float] = None
     work_order_number: Optional[str] = None
     remarks: Optional[str] = None
+    last_modified_remarks: Optional[str] = None
     shift_status: Optional[str] = None
     actual_check_in: Optional[str] = None
     actual_check_out: Optional[str] = None

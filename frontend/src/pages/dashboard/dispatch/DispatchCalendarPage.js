@@ -764,7 +764,18 @@ const ScheduleDetailDialog = ({ row, onClose }) => {
 
           {row.remarks && (
             <Row label="Remarks">
-              {row.remarks}
+              <div className="flex flex-col gap-0.5">
+                {String(row.remarks)
+                  .split('\n')
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+                  .map((line, i) => (
+                    <div key={i} className="flex items-start gap-1">
+                      <span className="text-[#94A3B8]">•</span>
+                      <span className="flex-1">{line}</span>
+                    </div>
+                  ))}
+              </div>
             </Row>
           )}
 
