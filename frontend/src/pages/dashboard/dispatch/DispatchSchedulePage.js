@@ -1117,7 +1117,11 @@ const DispatchSchedulePage = ({ todayOnly = false }) => {
                     className={rowBgClass}
                   >
                   {visibleCols.map((c, i) => {
-                    const bgOverride = columnCellBg(c.key);
+                    // Tint the remarks cell green when the row actually has a remark.
+                    const hasRemark = c.key === 'remarks' && getRemarksList(r).length > 0;
+                    const bgOverride = hasRemark
+                      ? 'bg-[#91fa89] dark:bg-emerald-900/60 text-[#052E16] dark:text-emerald-100'
+                      : columnCellBg(c.key);
                     const textOverride = columnCellText(c.key);
                     const borderOverride = columnCellBorder(c.key);
                     // Sticky first cell must always have an explicit bg
