@@ -8,6 +8,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import GuestRoute from "@/components/GuestRoute";
 import DashboardLayout from "@/layouts/DashboardLayout";
 import Login from "@/pages/auth/Login";
+import ClientPortalLogin from "@/pages/auth/ClientPortalLogin";
 import Register from "@/pages/auth/Register";
 import ForgotPassword from "@/pages/auth/ForgotPassword";
 import ResetPassword from "@/pages/auth/ResetPassword";
@@ -60,6 +61,18 @@ function App() {
               </GuestRoute>
             }
           />
+          <Route
+            path="/client-portal/login"
+            element={
+              <GuestRoute>
+                <ClientPortalLogin />
+              </GuestRoute>
+            }
+          />
+          {/* Legacy paths — keep them alive so existing links / bookmarks
+              still land in the right place. */}
+          <Route path="/client-portal" element={<Navigate to="/client-portal/dashboard" replace />} />
+          <Route path="/client" element={<Navigate to="/client-portal/dashboard" replace />} />
           <Route path="/register" element={<Navigate to="/login" replace />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
@@ -104,14 +117,15 @@ function App() {
           </Route>
 
           <Route
-            path="/client"
+            path="/client-portal"
             element={
               <ClientProtectedRoute>
                 <ClientPortalLayout />
               </ClientProtectedRoute>
             }
           >
-            <Route index element={<ClientDashboard />} />
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<ClientDashboard />} />
             <Route path="today" element={<DispatchSchedulePage todayOnly />} />
             <Route path="schedules" element={<DispatchSchedulePage />} />
             <Route path="calendar" element={<DispatchCalendarPage />} />

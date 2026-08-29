@@ -29,7 +29,7 @@ const GuestRoute = ({ children }) => {
   if (isAuthenticated) {
     return (
       <Navigate
-        to={user?.role === 'client' ? '/client' : '/dashboard'}
+        to={user?.role === 'client' ? '/client-portal/dashboard' : '/dashboard'}
         state={{ fromGuestRoute: location.pathname }}
         replace
       />

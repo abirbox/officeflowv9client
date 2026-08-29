@@ -27,7 +27,7 @@ const ProtectedRoute = ({ children }) => {
 
   // Clients belong to the dedicated Client Portal, never the admin dashboard.
   if (user?.role === 'client') {
-    return <Navigate to="/client" replace />;
+    return <Navigate to="/client-portal/dashboard" replace />;
   }
 
   return children;

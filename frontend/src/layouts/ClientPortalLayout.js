@@ -14,16 +14,16 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 
 const navItems = [
-  { name: 'Dashboard', href: '/client', icon: LayoutDashboard, end: true },
-  { name: "Today's Dispatch", href: '/client/today', icon: CalendarClock },
-  { name: 'Dispatch Schedule', href: '/client/schedules', icon: Users },
-  { name: 'Dispatch Calendar', href: '/client/calendar', icon: CalendarDays },
-  { name: 'Security Officers', href: '/client/officers', icon: Shield },
-  { name: 'Post Sites', href: '/client/post-sites', icon: MapPin },
-  { name: 'Vendors', href: '/client/vendors', icon: Building2 },
-  { name: 'Payment SO', href: '/client/payments', icon: DollarSign },
-  { name: 'Wage Report', href: '/client/wage-report', icon: Wallet },
-  { name: 'Reports', href: '/client/reports', icon: BarChart3 },
+  { name: 'Dashboard', href: '/client-portal/dashboard', icon: LayoutDashboard, end: true },
+  { name: "Today's Dispatch", href: '/client-portal/today', icon: CalendarClock },
+  { name: 'Dispatch Schedule', href: '/client-portal/schedules', icon: Users },
+  { name: 'Dispatch Calendar', href: '/client-portal/calendar', icon: CalendarDays },
+  { name: 'Security Officers', href: '/client-portal/officers', icon: Shield },
+  { name: 'Post Sites', href: '/client-portal/post-sites', icon: MapPin },
+  { name: 'Vendors', href: '/client-portal/vendors', icon: Building2 },
+  { name: 'Payment SO', href: '/client-portal/payments', icon: DollarSign },
+  { name: 'Wage Report', href: '/client-portal/wage-report', icon: Wallet },
+  { name: 'Reports', href: '/client-portal/reports', icon: BarChart3 },
 ];
 
 const ClientPortalLayout = () => {
@@ -45,7 +45,7 @@ const ClientPortalLayout = () => {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    navigate('/client-portal/login');
   };
 
   const isActive = (item) => item.end ? location.pathname === item.href : location.pathname.startsWith(item.href);

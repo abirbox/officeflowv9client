@@ -22,7 +22,7 @@ const ClientProtectedRoute = ({ children }) => {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    return <Navigate to="/client-portal/login" state={{ from: location }} replace />;
   }
 
   // Only clients may access the Client Portal. Everyone else goes to admin.

@@ -85,6 +85,13 @@ export default function ClientPortalLoginDialog({ client }) {
               {enabled ? 'Portal login is ACTIVE. This client can sign in and view only their own data.' : 'No portal login yet. Set an email and password to grant this client access.'}
             </div>
 
+            <div className="text-[11px] text-[#64748B] dark:text-[#A1A1AA] bg-[#F8FAFC] dark:bg-[#0F0F11] border border-[#E2E8F0] dark:border-[#27272A] px-3 py-2 rounded-lg">
+              <div className="font-semibold text-[#0F172A] dark:text-[#FAFAFA] mb-1">Client Sign-In URL</div>
+              <code className="break-all text-[#0EA5E9]" data-testid="portal-login-url">
+                {typeof window !== 'undefined' ? `${window.location.origin}/client-portal/login` : '/client-portal/login'}
+              </code>
+            </div>
+
             <div className="space-y-1">
               <Label>Login Email *</Label>
               <Input

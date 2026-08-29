@@ -13,7 +13,7 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuthStore();
+  const { login, logout } = useAuthStore();
   const { settings, refresh } = useAppSettings();
   const navigate = useNavigate();
   const location = useLocation();
@@ -28,16 +28,19 @@ const Login = () => {
     const result = await login(email, password);
     setIsLoading(false);
 
-    if (result.success) {
-      refresh();
-      if (result.user?.role === 'client') {
-        navigate('/client', { replace: true });
-      } else {
-        navigate(from, { replace: true });
-      }
-    } else {
+    if (!result.success) {
       setError(result.error);
+      return;
     }
+    // Cross-portal guard: client accounts must use the dedicated
+    // /client-portal/login page and not the employee/admin sign-in.
+    if (result.user?.role === 'client') {
+      await logout();
+      setError('This account is a client account. Please sign in at the Client Portal (/client-portal/login).');
+      return;
+    }
+    refresh();
+    navigate(from, { replace: true });
   };
 
   const heroTitle = settings?.login_hero_title || settings?.brand_name || 'OfficeFlow';
@@ -145,9 +148,13 @@ const Login = () => {
               </Button>
             </form>
 
-            <div className="mt-6 text-center">
+            <div className="mt-6 text-center space-y-1">
               <p className="text-sm text-[#64748B] dark:text-[#A1A1AA]">
                 Contact your administrator to get an account
+              </p>
+              <p className="text-xs text-[#94A3B8] dark:text-[#71717A]">
+                Client of ours?&nbsp;
+                <Link to="/client-portal/login" className="text-[#0EA5E9] hover:underline">Sign in to the Client Portal</Link>
               </p>
             </div>
           </div>
