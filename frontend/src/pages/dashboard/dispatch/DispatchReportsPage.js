@@ -289,7 +289,7 @@ const DispatchReportsPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payslipIdentity]);
 
-  // Seed the editable hours/rate map whenever the payslip rows load.
+  // Seed the editable hours/rate/start/end map whenever the payslip rows load.
   useEffect(() => {
     const items = detail?.data?.items || [];
     const map = {};
@@ -297,10 +297,23 @@ const DispatchReportsPage = () => {
       map[r.id] = {
         duty_hours: r.duty_hours != null ? String(r.duty_hours) : '',
         duty_rate: r.hourly_rate != null ? String(r.hourly_rate) : (r.duty_rate != null ? String(r.duty_rate) : ''),
+        start_time: r.start_time || '',
+        end_time: r.end_time || '',
       };
     });
     setScheduleEdits(map);
   }, [detail?.data?.items]);
+
+  /** Duty hours from HH:MM start/end; supports overnight shifts. */
+  const hoursFromTimes = (start, end) => {
+    if (!start || !end) return null;
+    const [sh, sm] = String(start).split(':').map((n) => Number(n));
+    const [eh, em] = String(end).split(':').map((n) => Number(n));
+    if ([sh, sm, eh, em].some((n) => !Number.isFinite(n))) return null;
+    let minutes = (eh * 60 + em) - (sh * 60 + sm);
+    if (minutes < 0) minutes += 24 * 60; // wraps past midnight
+    return Math.round((minutes / 60) * 100) / 100; // 2-decimal
+  };
 
   const openAdvanceDialog = (type) => {
     setAdvDialog(type);
@@ -455,7 +468,19 @@ const DispatchReportsPage = () => {
   };
 
   const updateScheduleEdit = (id, field, value) =>
-    setScheduleEdits((m) => ({ ...m, [id]: { ...(m[id] || {}), [field]: value } }));
+    setScheduleEdits((m) => {
+      const prev = m[id] || {};
+      const next = { ...prev, [field]: value };
+      // When start or end time changes, recompute duty_hours automatically
+      // (only if BOTH values are present and parse as valid HH:MM).
+      if (field === 'start_time' || field === 'end_time') {
+        const start = field === 'start_time' ? value : prev.start_time;
+        const end = field === 'end_time' ? value : prev.end_time;
+        const computed = hoursFromTimes(start, end);
+        if (computed != null) next.duty_hours = String(computed);
+      }
+      return { ...m, [id]: next };
+    });
 
   const dirtyScheduleRows = () => {
     const items = detail?.data?.items || [];
@@ -463,7 +488,14 @@ const DispatchReportsPage = () => {
       const e = scheduleEdits[r.id] || {};
       const origH = r.duty_hours != null ? String(r.duty_hours) : '';
       const origR = r.hourly_rate != null ? String(r.hourly_rate) : (r.duty_rate != null ? String(r.duty_rate) : '');
-      return (e.duty_hours ?? origH) !== origH || (e.duty_rate ?? origR) !== origR;
+      const origS = r.start_time || '';
+      const origEnd = r.end_time || '';
+      return (
+        (e.duty_hours ?? origH) !== origH
+        || (e.duty_rate ?? origR) !== origR
+        || (e.start_time ?? origS) !== origS
+        || (e.end_time ?? origEnd) !== origEnd
+      );
     });
   };
 
@@ -477,6 +509,8 @@ const DispatchReportsPage = () => {
         const body = {};
         if (e.duty_hours !== undefined && e.duty_hours !== '') body.duty_hours = Number(e.duty_hours);
         if (e.duty_rate !== undefined && e.duty_rate !== '') body.duty_rate = Number(e.duty_rate);
+        if (e.start_time !== undefined && e.start_time !== '') body.start_time = e.start_time;
+        if (e.end_time !== undefined && e.end_time !== '') body.end_time = e.end_time;
         await api.put(`/dispatch/schedules/${r.id}`, body);
       }
       toast.success(`Updated ${dirty.length} shift(s) on the schedule`);
@@ -1031,8 +1065,28 @@ const downloadEntityDetail = async (fmt, opts = {}) => {
                           <tr key={r.id}>
                             <td className="px-2 py-2 bg-[#FBE4EA]/40 font-medium">{r.date}</td>
                             <td className="px-2 py-2">{r.shift_type || '—'}</td>
-                            <td className="px-2 py-2 font-mono">{r.start_time || '—'}</td>
-                            <td className="px-2 py-2 font-mono">{r.end_time || '—'}</td>
+                            <td className="px-2 py-2 font-mono">
+                              {canFinancial ? (
+                                <Input
+                                  type="time"
+                                  value={(scheduleEdits[r.id]?.start_time) ?? (r.start_time || '')}
+                                  onChange={(e) => updateScheduleEdit(r.id, 'start_time', e.target.value)}
+                                  className="h-7 w-28 text-xs"
+                                  data-testid={`edit-start-${r.id}`}
+                                />
+                              ) : (r.start_time || '—')}
+                            </td>
+                            <td className="px-2 py-2 font-mono">
+                              {canFinancial ? (
+                                <Input
+                                  type="time"
+                                  value={(scheduleEdits[r.id]?.end_time) ?? (r.end_time || '')}
+                                  onChange={(e) => updateScheduleEdit(r.id, 'end_time', e.target.value)}
+                                  className="h-7 w-28 text-xs"
+                                  data-testid={`edit-end-${r.id}`}
+                                />
+                              ) : (r.end_time || '—')}
+                            </td>
                             <td className="px-2 py-2 text-right">
                               {canFinancial ? (
                                 <Input type="number" min="0" step="0.01" value={(scheduleEdits[r.id]?.duty_hours) ?? (r.duty_hours ?? '')} onChange={(e) => updateScheduleEdit(r.id, 'duty_hours', e.target.value)} className="h-7 w-20 text-right ml-auto" data-testid={`edit-hours-${r.id}`} />
